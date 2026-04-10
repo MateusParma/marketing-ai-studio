@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marketing AI Studio</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ========== WIZARD DE ONBOARDING ========== -->
+<div id="wizard" class="wizard hidden">
+  <div class="wizard-card">
+    <div class="wizard-header">
+      <div class="logo-mark">M</div>
+      <div>
+        <div class="wizard-title">Bem-vinda ao Marketing AI Studio</div>
+        <div class="wizard-sub">Vamos conhecer a empresa em 3 passos rápidos</div>
+      </div>
+    </div>
+
+    <div class="wizard-progress">
+      <div class="step-dot active" data-step="1">1</div>
+      <div class="step-line"></div>
+      <div class="step-dot" data-step="2">2</div>
+      <div class="step-line"></div>
+      <div class="step-dot" data-step="3">3</div>
+      <div class="step-line"></div>
+      <div class="step-dot" data-step="4">✓</div>
+    </div>
+
+    <!-- Passo 1 -->
+    <div class="wizard-step active" data-step="1">
+      <h2>Quem é a empresa?</h2>
+      <p class="wizard-desc">Comece pelo básico. Quanto mais detalhes, melhor a IA entende sua marca.</p>
+      <label>Nome da empresa *<input id="w-nome" placeholder="Ex: Atelier da Ana"></label>
+      <label>Site (a IA vai ler automaticamente)<input id="w-site" placeholder="https://atelierdaana.com.br"></label>
+      <label>Segmento *<input id="w-segmento" placeholder="Ex: Confeitaria artesanal, Design gráfico, Moda..."></label>
+      <div class="wizard-actions">
+        <button class="btn-primary" onclick="nextStep(1)">Próximo →</button>
+      </div>
+    </div>
+
+    <!-- Passo 2 -->
+    <div class="wizard-step" data-step="2">
+      <h2>Quem é o público?</h2>
+      <p class="wizard-desc">Quem a empresa atende e quais redes sociais usa.</p>
+      <label>Público-alvo *<textarea id="w-publico" rows="2" placeholder="Ex: Mulheres 25-45, classe B, que valorizam produtos artesanais e exclusivos"></textarea></label>
+      <label>Redes sociais<input id="w-redes" placeholder="@instagram, facebook.com/..., tiktok"></label>
+      <label>Localização (cidade/região)<input id="w-local" placeholder="Ex: São Paulo - SP, atende Brasil todo"></label>
+      <div class="wizard-actions">
+        <button class="btn-secondary" onclick="prevStep(2)">← Voltar</button>
+        <button class="btn-primary" onclick="nextStep(2)">Próximo →</button>
+      </div>
+    </div>
+
+    <!-- Passo 3 -->
+    <div class="wizard-step" data-step="3">
+      <h2>O que torna a empresa única?</h2>
+      <p class="wizard-desc">Conte tudo que for relevante: serviços, diferenciais, valores, história. A IA usa isso pra criar conteúdo no tom certo.</p>
+      <label>Descrição completa *<textarea id="w-descricao" rows="6" placeholder="Ex: Atelier criado em 2018 especializado em bolos personalizados para casamentos. Trabalhamos com ingredientes orgânicos..."></textarea></label>
+      <label>Concorrentes principais (sites separados por vírgula — opcional)<input id="w-concorrentes" placeholder="https://concorrente1.com, https://concorrente2.com"></label>
+      <div class="wizard-actions">
+        <button class="btn-secondary" onclick="prevStep(3)">← Voltar</button>
+        <button class="btn-primary" onclick="finalizarOnboarding()">Analisar com IA ✨</button>
+      </div>
+    </div>
+
+    <!-- Passo 4: loading -->
+    <div class="wizard-step" data-step="4">
+      <div class="onboarding-loading">
+        <div class="spinner"></div>
+        <h2>A IA está estudando a sua marca...</h2>
+        <p id="loading-status">Lendo o site e analisando o segmento</p>
+        <div class="loading-steps">
+          <div class="loading-step" id="ls-1">📖 Lendo conteúdo do site</div>
+          <div class="loading-step" id="ls-2">🎯 Identificando posicionamento e persona</div>
+          <div class="loading-step" id="ls-3">🔍 Analisando concorrentes</div>
+          <div class="loading-step" id="ls-4">✨ Pronto!</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== DASHBOARD PRINCIPAL ========== -->
+<div id="dashboard" class="dashboard hidden">
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="logo-mark sm">M</div>
+      <div>
+        <div class="brand-name" id="topbar-nome">—</div>
+        <div class="brand-segment" id="topbar-segmento">—</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <button class="btn-ghost" id="btn-galeria" onclick="toggleView('galeria')">🖼️ Galeria</button>
+      <button class="btn-ghost" id="btn-modulos" onclick="toggleView('modulos')" style="display:none;">⚡ Módulos</button>
+      <button class="btn-ghost" id="btn-conexoes" onclick="toggleView('conexoes')">🔗 Conexões</button>
+      <button class="btn-ghost" id="btn-agenda" onclick="toggleView('agenda')">⏰ Agenda</button>
+      <button class="btn-ghost" onclick="toggleSidebar()">📋 Perfil</button>
+      <button class="btn-ghost" onclick="resetTudo()">🔄 Recomeçar</button>
+    </div>
+  </header>
+
+  <!-- Sidebar com perfil/diagnóstico -->
+  <aside id="sidebar-perfil" class="sidebar-perfil hidden">
+    <div class="sidebar-header">
+      <h3>Perfil da empresa</h3>
+      <button class="btn-ghost-sm" onclick="toggleSidebar()">✕</button>
+    </div>
+    <div id="perfil-conteudo"></div>
+  </aside>
+
+  <main class="main-content">
+    <div id="view-modulos">
+    <!-- Banner de ação rápida -->
+    <div class="hero-card">
+      <div>
+        <h1>Olá! 👋</h1>
+        <p>Tudo pronto pra criar conteúdo. A IA já conhece sua marca — basta escolher o que precisa abaixo.</p>
+      </div>
+      <button class="btn-magic" onclick="gerarTudoDeUmaVez()">
+        ✨ Gerar pacote completo
+        <span class="btn-magic-sub">Conteúdo + Calendário + Concorrentes</span>
+      </button>
+    </div>
+
+    <!-- Grid de módulos -->
+    <div class="modules-grid">
+
+      <!-- MÓDULO: Gerador de conteúdo -->
+      <div class="module-card">
+        <div class="module-header">
+          <div class="module-icon">✏️</div>
+          <h3>Gerador de Conteúdo</h3>
+        </div>
+        <p class="module-desc">Posts, carrosséis, copy de anúncios, blog. Já no tom da sua marca.</p>
+        <div class="module-form">
+          <div class="row">
+            <select id="ct-tipo">
+              <option value="post">Post</option>
+              <option value="carrossel">Carrossel</option>
+              <option value="stories">Stories</option>
+              <option value="copy de anúncio">Copy de anúncio</option>
+              <option value="post de blog">Post de blog</option>
+              <option value="legenda">Legenda</option>
+            </select>
+            <select id="ct-plataforma">
+              <option>Instagram</option>
+              <option>Facebook</option>
+              <option>LinkedIn</option>
+              <option>TikTok</option>
+              <option>Google Ads</option>
+              <option>Blog</option>
+            </select>
+          </div>
+          <div class="row">
+            <select id="ct-objetivo">
+              <option>engajamento</option>
+              <option>vendas</option>
+              <option>autoridade</option>
+              <option>leads</option>
+              <option>awareness</option>
+            </select>
+            <input id="ct-qtd" type="number" value="3" min="1" max="10">
+          </div>
+          <input id="ct-tema" placeholder="Tema (ex: lançamento da coleção de outono)">
+          <button class="btn-primary" onclick="gerarConteudo()">Gerar com IA</button>
+        </div>
+        <div id="ct-resultado" class="module-result"></div>
+      </div>
+
+      <!-- MÓDULO: Calendário editorial -->
+      <div class="module-card">
+        <div class="module-header">
+          <div class="module-icon">📅</div>
+          <h3>Calendário Editorial</h3>
+        </div>
+        <p class="module-desc">Planejamento mensal com datas comemorativas brasileiras.</p>
+        <div class="module-form">
+          <div class="row">
+            <select id="cal-mes">
+              <option value="1">Janeiro</option><option value="2">Fevereiro</option>
+              <option value="3">Março</option><option value="4" selected>Abril</option>
+              <option value="5">Maio</option><option value="6">Junho</option>
+              <option value="7">Julho</option><option value="8">Agosto</option>
+              <option value="9">Setembro</option><option value="10">Outubro</option>
+              <option value="11">Novembro</option><option value="12">Dezembro</option>
+            </select>
+            <input id="cal-ano" type="number" value="2026">
+          </div>
+          <select id="cal-freq">
+            <option>2x por semana</option>
+            <option selected>3x por semana</option>
+            <option>4x por semana</option>
+            <option>diário</option>
+          </select>
+          <input id="cal-plat" value="Instagram, Facebook" placeholder="Plataformas">
+          <button class="btn-primary" onclick="gerarCalendario()">Gerar Calendário</button>
+        </div>
+        <div id="cal-resultado" class="module-result"></div>
+      </div>
+
+      <!-- MÓDULO: Concorrentes -->
+      <div class="module-card wide">
+        <div class="module-header">
+          <div class="module-icon">🔍</div>
+          <h3>Concorrentes & Tendências</h3>
+        </div>
+        <p class="module-desc">A IA analisa o que concorrentes estão fazendo e indica oportunidades.</p>
+        <div class="module-form">
+          <div id="conc-lista">
+            <div class="conc-item">
+              <input placeholder="Nome" class="conc-nome">
+              <input placeholder="https://site.com" class="conc-site">
+            </div>
+          </div>
+          <div class="row">
+            <button class="btn-secondary" onclick="addConc()">+ Adicionar concorrente</button>
+            <button class="btn-primary" onclick="analisarConcorrentes()">Analisar com IA</button>
+          </div>
+        </div>
+        <div id="conc-resultado" class="module-result"></div>
+      </div>
+
+      <!-- MÓDULO: Link de Ideias -->
+      <div class="module-card wide">
+        <div class="module-header">
+          <div class="module-icon">💡</div>
+          <h3>Link de Ideias</h3>
+          <span class="badge-new">Answer The Public</span>
+        </div>
+        <p class="module-desc">Explore um tema como árvore: perguntas do público, subtemas, ângulos de conteúdo, palavras-chave e conexões entre ideias.</p>
+        <div class="module-form">
+          <input id="ideia-tema" placeholder="Digite um tema (ex: skincare natural, marketing digital, bolos decorados...)">
+          <button class="btn-primary" onclick="explorarIdeias()">💡 Explorar tema</button>
+        </div>
+        <div id="ideia-resultado" class="module-result"></div>
+      </div>
+
+      <!-- MÓDULO: Gerador de Hashtags -->
+      <div class="module-card">
+        <div class="module-header">
+          <div class="module-icon">#️⃣</div>
+          <h3>Hashtags Inteligentes</h3>
+        </div>
+        <p class="module-desc">Conjuntos estratégicos: populares + médias + nichadas. Prontas pra colar.</p>
+        <div class="module-form">
+          <input id="hash-tema" placeholder="Tema do post">
+          <select id="hash-plat">
+            <option>Instagram</option><option>TikTok</option>
+            <option>LinkedIn</option><option>Twitter/X</option>
+          </select>
+          <button class="btn-primary" onclick="gerarHashtags()">Gerar hashtags</button>
+        </div>
+        <div id="hash-resultado" class="module-result"></div>
+      </div>
+
+      <!-- MÓDULO: Briefing de Design -->
+      <div class="module-card">
+        <div class="module-header">
+          <div class="module-icon">🎨</div>
+          <h3>Briefing de Design</h3>
+        </div>
+        <p class="module-desc">Brief visual completo: layout, tipografia, paleta, mood. Pronto pra executar.</p>
+        <div class="module-form">
+          <input id="brief-tema" placeholder="Tema do post (ex: promoção dia das mães)">
+          <div class="row">
+            <select id="brief-tipo">
+              <option>Post Instagram</option><option>Stories</option>
+              <option>Carrossel</option><option>Banner</option>
+              <option>Capa Facebook</option><option>Thumbnail YouTube</option>
+            </select>
+            <select id="brief-plat">
+              <option>Instagram</option><option>Facebook</option>
+              <option>LinkedIn</option><option>Blog</option>
+            </select>
+          </div>
+          <button class="btn-primary" onclick="gerarBriefing()">Gerar briefing</button>
+        </div>
+        <div id="brief-resultado" class="module-result"></div>
+      </div>
+
+      <!-- MÓDULO: Reciclador de Conteúdo -->
+      <div class="module-card wide">
+        <div class="module-header">
+          <div class="module-icon">♻️</div>
+          <h3>Reciclador de Conteúdo</h3>
+          <span class="badge-new">1→6 formatos</span>
+        </div>
+        <p class="module-desc">Cole um conteúdo e transforme em carrossel, stories, thread, LinkedIn, Reels e blog de uma vez.</p>
+        <div class="module-form">
+          <textarea id="reciclar-texto" rows="4" placeholder="Cole aqui qualquer conteúdo: um post, uma legenda, um texto de blog, uma ideia..."></textarea>
+          <select id="reciclar-formato">
+            <option>post Instagram</option><option>texto de blog</option>
+            <option>legenda</option><option>copy de anúncio</option><option>outro</option>
+          </select>
+          <button class="btn-primary" onclick="reciclarConteudo()">♻️ Reciclar em 6 formatos</button>
+        </div>
+        <div id="reciclar-resultado" class="module-result"></div>
+      </div>
+
+      <!-- MÓDULO: Bio & Sobre -->
+      <div class="module-card wide">
+        <div class="module-header">
+          <div class="module-icon">👤</div>
+          <h3>Gerador de Bio & Sobre</h3>
+        </div>
+        <p class="module-desc">Bios otimizadas para cada rede social, prontas pra copiar. Usa o perfil da empresa.</p>
+        <div class="module-form">
+          <button class="btn-primary" onclick="gerarBios()">👤 Gerar bios para todas as redes</button>
+        </div>
+        <div id="bio-resultado" class="module-result"></div>
+      </div>
+
+    </div>
+
+    <!-- Histórico -->
+    <div class="historico-card" id="historico-card" style="display:none;">
+      <h3>📚 Histórico de conteúdos gerados</h3>
+      <div id="historico-lista"></div>
+    </div>
+    </div><!-- fim view-modulos -->
+
+    <!-- ========== GALERIA / PAINEL DE PROJETOS ========== -->
+    <div id="view-galeria" class="view-galeria" style="display:none;">
+      <div class="galeria-header">
+        <div>
+          <h2>🖼️ Galeria de Projetos</h2>
+          <p class="galeria-sub">Tudo que foi criado — posts, imagens, campanhas. Seu portfólio de conteúdo.</p>
+        </div>
+        <div class="galeria-filters">
+          <button class="filter-btn active" data-filter="todos" onclick="filtrarGaleria('todos')">Todos</button>
+          <button class="filter-btn" data-filter="imagens" onclick="filtrarGaleria('imagens')">🖼️ Imagens</button>
+          <button class="filter-btn" data-filter="posts" onclick="filtrarGaleria('posts')">✏️ Posts</button>
+          <button class="filter-btn" data-filter="calendario" onclick="filtrarGaleria('calendario')">📅 Calendário</button>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="galeria-stats" id="galeria-stats"></div>
+
+      <!-- Grid visual -->
+      <div class="galeria-grid" id="galeria-grid"></div>
+
+      <!-- Vazio -->
+      <div id="galeria-vazio" class="galeria-vazio" style="display:none;">
+        <div class="vazio-icon">🎨</div>
+        <h3>Nenhum projeto ainda</h3>
+        <p>Comece gerando conteúdo nos módulos. Tudo que você criar aparece aqui automaticamente.</p>
+        <button class="btn-primary" onclick="toggleView('modulos')">⚡ Ir para os módulos</button>
+      </div>
+    </div>
+
+    <!-- ========== PAINEL DE CONEXÕES ========== -->
+    <div id="view-conexoes" class="view-conexoes" style="display:none;">
+      <div class="galeria-header">
+        <div>
+          <h2>🔗 Conexões & Integrações</h2>
+          <p class="galeria-sub">Conecte suas contas para publicar automaticamente direto do app.</p>
+        </div>
+      </div>
+
+      <div class="conexoes-grid">
+        <!-- META (Instagram + Facebook) -->
+        <div class="conexao-card" id="conexao-meta">
+          <div class="conexao-header">
+            <div class="conexao-icon meta">f</div>
+            <div>
+              <h3>Instagram & Facebook</h3>
+              <p class="conexao-desc">Via Meta Graph API. Publique posts com imagem diretamente.</p>
+            </div>
+          </div>
+          <div class="conexao-status" id="meta-status">
+            <span class="status-dot off"></span> Não conectado
+          </div>
+          <div class="conexao-body">
+            <div class="conexao-instrucoes" id="meta-instrucoes">
+              <p><strong>Como conectar (3 passos):</strong></p>
+              <ol>
+                <li>Acesse o <a href="https://developers.facebook.com/tools/explorer/" target="_blank">Explorador da Graph API</a></li>
+                <li>No topo, selecione seu app (<strong>itime marketing</strong>)</li>
+                <li>Clique em <strong>"Gerar token de acesso"</strong> — marque as permissões:
+                  <code>pages_manage_posts</code>, <code>pages_read_engagement</code>, <code>instagram_basic</code>, <code>instagram_content_publish</code></li>
+                <li>Copie o <strong>token gerado</strong> e cole abaixo</li>
+                <li>O <strong>Page ID</strong> da sua Página do Facebook (vá na sua Página → Sobre → role até ver o ID numérico, ou use a Graph API: <code>/me/accounts</code>)</li>
+              </ol>
+              <input id="meta-page-token" placeholder="Token de acesso (cole o token gerado)" type="password">
+              <input id="meta-page-id" placeholder="Page ID da sua Página Facebook (ex: 123456789)">
+              <input id="meta-ig-id" placeholder="Instagram Business ID (opcional — busca automática)">
+              <button class="btn-primary" onclick="conectarMetaManual()">🔗 Conectar Facebook & Instagram</button>
+              <button class="btn-secondary" style="margin-top:6px;" onclick="buscarPaginasMeta()">🔍 Buscar minhas páginas automaticamente</button>
+            </div>
+            <div class="conexao-conectado hidden" id="meta-conectado">
+              <div class="conexao-info">
+                <span>📄 Página: <strong id="meta-page-name">—</strong></span>
+                <span id="meta-ig-status"></span>
+                <span id="meta-expira" style="font-size:.8rem;color:#94a3b8;"></span>
+              </div>
+              <button class="btn-secondary btn-sm" onclick="desconectarPlataforma('meta')">Desconectar</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- WIX -->
+        <div class="conexao-card" id="conexao-wix">
+          <div class="conexao-header">
+            <div class="conexao-icon wix">W</div>
+            <div>
+              <h3>Wix Blog</h3>
+              <p class="conexao-desc">Publique posts diretamente no blog do seu site Wix.</p>
+            </div>
+          </div>
+          <div class="conexao-status" id="wix-status">
+            <span class="status-dot off"></span> Não conectado
+          </div>
+          <div class="conexao-body">
+            <div class="conexao-instrucoes" id="wix-instrucoes">
+              <p><strong>Para conectar:</strong></p>
+              <ol>
+                <li>Acesse <a href="https://manage.wix.com" target="_blank">manage.wix.com</a></li>
+                <li>Vá em Configurações → Chaves de API</li>
+                <li>Crie uma chave com permissão "Blog" (leitura e escrita)</li>
+                <li>Copie a API Key e o Site ID</li>
+              </ol>
+              <input id="wix-api-key" placeholder="API Key do Wix" type="password">
+              <input id="wix-site-id" placeholder="Site ID (encontre nas configurações do site)">
+              <input id="wix-account-id" placeholder="Account ID (opcional)">
+              <button class="btn-primary" onclick="conectarWix()">Conectar Wix</button>
+            </div>
+            <div class="conexao-conectado hidden" id="wix-conectado">
+              <div class="conexao-info"><span>✅ Wix conectado</span></div>
+              <button class="btn-secondary btn-sm" onclick="desconectarPlataforma('wix')">Desconectar</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- SITES IA / WEBHOOK -->
+        <div class="conexao-card" id="conexao-siteia">
+          <div class="conexao-header">
+            <div class="conexao-icon siteia">🤖</div>
+            <div>
+              <h3>Sites gerados por IA / Webhook</h3>
+              <p class="conexao-desc">Hostinger, Framer, Durable e outros. Conecte via webhook/API.</p>
+            </div>
+          </div>
+          <div class="conexao-status" id="siteia-status">
+            <span class="status-dot off"></span> Não conectado
+          </div>
+          <div class="conexao-body">
+            <div class="conexao-instrucoes" id="siteia-instrucoes">
+              <p><strong>Configure o endpoint do seu site:</strong></p>
+              <p>Se o seu site gerado por IA tem uma API ou aceita webhooks, cole a URL aqui. O app vai enviar os dados do post via POST.</p>
+              <input id="siteia-nome" placeholder="Nome do site (ex: Meu Site Hostinger)">
+              <input id="siteia-webhook" placeholder="URL do webhook (ex: https://meusite.com/api/posts)">
+              <input id="siteia-header-key" placeholder="Header de autenticação - chave (ex: Authorization)">
+              <input id="siteia-header-val" placeholder="Header valor (ex: Bearer xxx)" type="password">
+              <button class="btn-primary" onclick="conectarSiteIA()">Conectar Site</button>
+            </div>
+            <div class="conexao-conectado hidden" id="siteia-conectado">
+              <div class="conexao-info"><span>✅ <span id="siteia-nome-conectado">Site</span> conectado</span></div>
+              <button class="btn-secondary btn-sm" onclick="desconectarPlataforma('siteIA')">Desconectar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== PAINEL DE AGENDAMENTOS ========== -->
+    <div id="view-agenda" class="view-agenda" style="display:none;">
+      <div class="galeria-header">
+        <div>
+          <h2>⏰ Postagens Agendadas</h2>
+          <p class="galeria-sub">Veja e gerencie todos os agendamentos de publicação automática.</p>
+        </div>
+      </div>
+      <div id="agenda-lista" class="agenda-lista"></div>
+      <div id="agenda-vazio" class="galeria-vazio" style="display:none;">
+        <div class="vazio-icon">⏰</div>
+        <h3>Nenhuma postagem agendada</h3>
+        <p>Gere conteúdo e clique em "Publicar/Agendar" no modal para criar agendamentos.</p>
+        <button class="btn-primary" onclick="toggleView('modulos')">⚡ Ir para os módulos</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div id="loading-overlay" class="loading hidden">
+  <div class="spinner"></div>
+  <div id="loading-text">Pensando com a IA...</div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<!-- ========== MODAL EXPANDIDO ========== -->
+<div id="modal" class="modal hidden">
+  <div class="modal-backdrop" onclick="fecharModal()"></div>
+  <div class="modal-panel">
+    <div class="modal-top">
+      <h2 id="modal-titulo">Conteúdo</h2>
+      <button class="btn-ghost-sm" onclick="fecharModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- Texto editável -->
+      <div class="modal-section">
+        <label class="modal-label">Gancho</label>
+        <textarea id="modal-gancho" rows="2" class="modal-textarea"></textarea>
+      </div>
+      <div class="modal-section">
+        <label class="modal-label">Texto / Copy</label>
+        <textarea id="modal-texto" rows="8" class="modal-textarea"></textarea>
+      </div>
+      <div class="modal-row">
+        <div class="modal-section half">
+          <label class="modal-label">CTA</label>
+          <input id="modal-cta">
+        </div>
+        <div class="modal-section half">
+          <label class="modal-label">Hashtags</label>
+          <input id="modal-hashtags">
+        </div>
+      </div>
+      <div class="modal-section">
+        <label class="modal-label">Sugestão de visual</label>
+        <input id="modal-visual">
+      </div>
+
+      <!-- Ações de IA -->
+      <div class="modal-actions">
+        <button class="btn-ai" onclick="modalMelhorar()">✨ Melhorar texto</button>
+        <button class="btn-ai" onclick="modalVariacoes()">🔄 Gerar variações</button>
+        <div class="img-gen-row">
+          <select id="modal-modelo-img" class="modelo-select">
+            <option value="gemini">🍌 NanoBanana (Gemini) — Grátis</option>
+            <option value="dalle">🎨 DALL-E 3 (OpenAI) — Pago</option>
+          </select>
+          <button class="btn-ai img" onclick="modalGerarImagem()">🎨 Gerar imagem</button>
+        </div>
+      </div>
+
+      <!-- Área de variações -->
+      <div id="modal-variacoes" class="modal-variacoes"></div>
+
+      <!-- Área de imagem gerada -->
+      <div id="modal-imagem" class="modal-imagem"></div>
+
+      <!-- Publicar / Agendar -->
+      <div class="modal-section modal-publicar">
+        <label class="modal-label">📤 Publicar / Agendar</label>
+        <div class="publicar-plataformas">
+          <label class="pub-check"><input type="checkbox" id="pub-facebook" value="facebook"> Facebook</label>
+          <label class="pub-check"><input type="checkbox" id="pub-instagram" value="instagram"> Instagram</label>
+          <label class="pub-check"><input type="checkbox" id="pub-wix" value="wix"> Wix Blog</label>
+          <label class="pub-check"><input type="checkbox" id="pub-siteia" value="siteIA"> Site IA</label>
+        </div>
+        <div class="publicar-opcoes">
+          <input type="datetime-local" id="pub-data" class="pub-datetime">
+          <button class="btn-ai publish" onclick="modalPublicarAgora()">🚀 Publicar agora</button>
+          <button class="btn-ai schedule" onclick="modalAgendar()">⏰ Agendar</button>
+        </div>
+        <div id="pub-resultado" class="pub-resultado"></div>
+      </div>
+
+      <!-- Barra inferior -->
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="fecharModal()">Fechar</button>
+        <button class="btn-primary" onclick="modalSalvar()">Salvar alterações</button>
+        <button class="copy-btn" onclick="modalCopiarTudo()">📋 Copiar tudo</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

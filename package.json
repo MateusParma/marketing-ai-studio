@@ -1,0 +1,21 @@
+{
+  "name": "marketing-ai-studio",
+  "version": "1.0.0",
+  "description": "Estudio de Marketing com IA - gestao avancada para design, social media e marketing",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.27.0",
+    "cheerio": "^1.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "node-cron": "^4.2.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
