@@ -14,8 +14,8 @@
     <div class="wizard-header">
       <div class="logo-mark">M</div>
       <div>
-        <div class="wizard-title">Bem-vinda ao Marketing AI Studio</div>
-        <div class="wizard-sub">Vamos conhecer a empresa em 3 passos rápidos</div>
+        <div class="wizard-title">Bem-vinda, Deborah!</div>
+        <div class="wizard-sub">Vamos cadastrar uma empresa em 3 passos rápidos</div>
       </div>
     </div>
 
@@ -92,25 +92,19 @@
         <div class="brand-name" id="topbar-nome">—</div>
         <div class="brand-segment" id="topbar-segmento">—</div>
       </div>
+      <select id="empresa-selector" class="empresa-selector" onchange="trocarEmpresa(this.value)"></select>
     </div>
     <div class="topbar-right">
       <button class="btn-ghost" id="btn-galeria" onclick="toggleView('galeria')">🖼️ Galeria</button>
       <button class="btn-ghost" id="btn-modulos" onclick="toggleView('modulos')" style="display:none;">⚡ Módulos</button>
       <button class="btn-ghost" id="btn-conexoes" onclick="toggleView('conexoes')">🔗 Conexões</button>
       <button class="btn-ghost" id="btn-agenda" onclick="toggleView('agenda')">⏰ Agenda</button>
-      <button class="btn-ghost" onclick="toggleSidebar()">📋 Perfil</button>
-      <button class="btn-ghost" onclick="resetTudo()">🔄 Recomeçar</button>
+      <button class="btn-ghost" id="btn-perfil" onclick="toggleView('perfil')">📋 Perfil</button>
+      <button class="btn-ghost" onclick="resetTudo()">🔄 Reset</button>
     </div>
   </header>
 
-  <!-- Sidebar com perfil/diagnóstico -->
-  <aside id="sidebar-perfil" class="sidebar-perfil hidden">
-    <div class="sidebar-header">
-      <h3>Perfil da empresa</h3>
-      <button class="btn-ghost-sm" onclick="toggleSidebar()">✕</button>
-    </div>
-    <div id="perfil-conteudo"></div>
-  </aside>
+  <!-- Sidebar removida - perfil agora é view completa -->
 
   <main class="main-content">
     <div id="view-modulos">
@@ -316,6 +310,132 @@
 
     </div>
 
+      <!-- MÓDULO: Campanha Completa -->
+      <div class="module-section">
+        <div class="module-header" onclick="this.parentElement.classList.toggle('open')">
+          <h3>🚀 Campanha Completa</h3>
+          <p>Crie uma campanha inteira: conceito, textos, cronograma, email e KPIs</p>
+        </div>
+        <div class="module-body">
+          <label>Tema ou produto *<input id="camp-tema" placeholder="Ex: Lançamento do novo serviço de canalização"></label>
+          <label>Objetivo<input id="camp-objetivo" placeholder="Ex: gerar leads, vendas, awareness"></label>
+          <label>Duração<input id="camp-duracao" placeholder="Ex: 1 semana, 15 dias, 1 mês"></label>
+          <label>Orçamento estimado<input id="camp-orcamento" placeholder="Ex: R$ 500, sem orçamento"></label>
+          <label>Plataformas<input id="camp-plats" placeholder="Instagram, Facebook, Google Ads, Email"></label>
+          <button class="btn-primary" onclick="gerarCampanha()">🚀 Gerar campanha completa</button>
+          <div id="camp-resultado"></div>
+        </div>
+      </div>
+
+      <!-- MÓDULO: Google Ads -->
+      <div class="module-section">
+        <div class="module-header" onclick="this.parentElement.classList.toggle('open')">
+          <h3>📢 Google Ads</h3>
+          <p>Gere anúncios otimizados para Google Search, Display e Performance Max</p>
+        </div>
+        <div class="module-body">
+          <label>Produto ou serviço *<input id="gads-produto" placeholder="Ex: Serviço de desentupimento 24h"></label>
+          <label>Objetivo<input id="gads-objetivo" placeholder="Ex: ligações, visitas ao site, vendas"></label>
+          <label>Quantidade de variações
+            <select id="gads-qtd"><option>3</option><option>5</option><option>8</option></select>
+          </label>
+          <button class="btn-primary" onclick="gerarGoogleAds()">📢 Gerar anúncios</button>
+          <div id="gads-resultado"></div>
+        </div>
+      </div>
+
+      <!-- MÓDULO: Email Marketing -->
+      <div class="module-section">
+        <div class="module-header" onclick="this.parentElement.classList.toggle('open')">
+          <h3>📧 Email Marketing</h3>
+          <p>Crie emails completos com subject, corpo, CTA e design sugerido</p>
+        </div>
+        <div class="module-body">
+          <label>Tema do email *<input id="email-tema" placeholder="Ex: Promoção de inverno, Newsletter mensal"></label>
+          <label>Tipo
+            <select id="email-tipo"><option>Promocional</option><option>Newsletter</option><option>Boas-vindas</option><option>Reengajamento</option><option>Lançamento</option><option>Evento</option></select>
+          </label>
+          <label>Objetivo<input id="email-obj" placeholder="Ex: vendas, cliques, cadastros"></label>
+          <button class="btn-primary" onclick="gerarEmail()">📧 Gerar email</button>
+          <div id="email-resultado"></div>
+        </div>
+      </div>
+
+      <!-- MÓDULO: YouTube Thumbnails -->
+      <div class="module-section">
+        <div class="module-header" onclick="this.parentElement.classList.toggle('open')">
+          <h3>🎬 YouTube Thumbnail</h3>
+          <p>Briefing visual completo + geração de thumbnail com IA</p>
+        </div>
+        <div class="module-body">
+          <label>Título do vídeo *<input id="thumb-titulo" placeholder="Ex: 5 Erros que Destroem seu Encanamento"></label>
+          <label>Estilo<input id="thumb-estilo" placeholder="Ex: chamativo, minimalista, profissional"></label>
+          <button class="btn-primary" onclick="gerarThumbnail()">🎬 Gerar thumbnail</button>
+          <div id="thumb-resultado"></div>
+        </div>
+      </div>
+
+      <!-- MÓDULO: Photoshoot IA -->
+      <div class="module-section">
+        <div class="module-header" onclick="this.parentElement.classList.toggle('open')">
+          <h3>📸 Photoshoot IA</h3>
+          <p>Transforme descrições em fotos profissionais de produto</p>
+        </div>
+        <div class="module-body">
+          <label>Descrição do produto *<input id="photo-desc" placeholder="Ex: chave inglesa cromada, torneira moderna"></label>
+          <label>Estilo da foto
+            <select id="photo-estilo"><option>Studio (fundo limpo)</option><option>Lifestyle (em uso)</option><option>Flatlay (vista de cima)</option><option>Ambiente (cenário real)</option><option>Close-up (detalhe)</option></select>
+          </label>
+          <label>Cenário<input id="photo-cenario" placeholder="Ex: bancada de cozinha, banheiro moderno"></label>
+          <button class="btn-primary" onclick="gerarPhotoshoot()">📸 Gerar foto profissional</button>
+          <div id="photo-resultado"></div>
+        </div>
+      </div>
+
+      <!-- MÓDULO: Edição por Linguagem Natural -->
+      <div class="module-section">
+        <div class="module-header" onclick="this.parentElement.classList.toggle('open')">
+          <h3>✨ Editor Inteligente</h3>
+          <p>Edite qualquer texto com instruções em linguagem natural</p>
+        </div>
+        <div class="module-body">
+          <label>Texto original *<textarea id="edit-original" rows="4" placeholder="Cole aqui o texto que quer editar..."></textarea></label>
+          <label>O que quer mudar? *<input id="edit-instrucao" placeholder="Ex: deixar mais informal, encurtar, adicionar emojis, mudar o CTA"></label>
+          <button class="btn-primary" onclick="editarNatural()">✨ Aplicar edição</button>
+          <div id="edit-resultado"></div>
+        </div>
+      </div>
+
+      <!-- MÓDULO: Ideias por Nicho -->
+      <div class="module-section">
+        <div class="module-header" onclick="this.parentElement.classList.toggle('open')">
+          <h3>💡 Ideias por Nicho</h3>
+          <p>Gerador de ideias de conteúdo viral por tema e nicho</p>
+        </div>
+        <div class="module-body">
+          <label>Nicho ou tema *<input id="nicho-tema" placeholder="Ex: canalização, design de interiores, fitness"></label>
+          <label>Objetivo<input id="nicho-obj" placeholder="Ex: engajamento, vendas, autoridade"></label>
+          <label>Quantidade
+            <select id="nicho-qtd"><option>5</option><option>10</option><option>15</option><option>20</option></select>
+          </label>
+          <button class="btn-primary" onclick="gerarIdeiasNicho()">💡 Gerar ideias</button>
+          <div id="nicho-resultado"></div>
+        </div>
+      </div>
+
+      <!-- MÓDULO: Business DNA -->
+      <div class="module-section">
+        <div class="module-header" onclick="this.parentElement.classList.toggle('open')">
+          <h3>🧬 Business DNA</h3>
+          <p>Extraia a identidade visual completa do site: paleta, fontes, mood, personalidade</p>
+        </div>
+        <div class="module-body">
+          <label>URL do site<input id="dna-site" placeholder="https://www.seusite.com"></label>
+          <button class="btn-primary" onclick="gerarDNA()">🧬 Analisar DNA da marca</button>
+          <div id="dna-resultado"></div>
+        </div>
+      </div>
+
     <!-- Histórico -->
     <div class="historico-card" id="historico-card" style="display:none;">
       <h3>📚 Histórico de conteúdos gerados</h3>
@@ -341,6 +461,22 @@
       <!-- Stats -->
       <div class="galeria-stats" id="galeria-stats"></div>
 
+      <!-- Toolbar de gerenciamento -->
+      <div class="galeria-toolbar" id="galeria-toolbar">
+        <div class="toolbar-left">
+          <button class="btn-ghost-sm" id="btn-gerenciar" onclick="toggleGerenciar()">☑️ Selecionar</button>
+          <span id="galeria-sel-count" class="sel-count hidden">0 selecionados</span>
+          <button class="btn-ghost-sm btn-danger hidden" id="btn-excluir-sel" onclick="excluirSelecionados()">🗑️ Excluir</button>
+          <button class="btn-ghost-sm hidden" id="btn-mover-sel" onclick="moverSelecionados()">📂 Mover</button>
+        </div>
+        <div class="toolbar-right">
+          <select id="filtro-pasta" class="pasta-select" onchange="renderGaleria()">
+            <option value="todas">📂 Todas as pastas</option>
+          </select>
+          <button class="btn-ghost-sm" onclick="gerenciarPastas()">⚙️ Pastas</button>
+        </div>
+      </div>
+
       <!-- Grid visual -->
       <div class="galeria-grid" id="galeria-grid"></div>
 
@@ -351,6 +487,11 @@
         <p>Comece gerando conteúdo nos módulos. Tudo que você criar aparece aqui automaticamente.</p>
         <button class="btn-primary" onclick="toggleView('modulos')">⚡ Ir para os módulos</button>
       </div>
+    </div>
+
+    <!-- ========== PERFIL DA EMPRESA (PÁGINA COMPLETA) ========== -->
+    <div id="view-perfil" class="view-perfil" style="display:none;">
+      <div id="perfil-page-content"></div>
     </div>
 
     <!-- ========== PAINEL DE CONEXÕES ========== -->

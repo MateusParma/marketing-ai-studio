@@ -62,12 +62,33 @@ async function askClaude(systemPrompt, userPrompt, maxTokens = 2000) {
   return response.content[0].text;
 }
 
+// ====== Helper: contexto rico da empresa para prompts ======
+function buildEmpresaContext(emp) {
+  if (!emp) return '';
+  const a = emp.analise || {};
+  const s = emp.scraped || {};
+  let ctx = `Empresa: ${emp.nome || ''}. Segmento: ${emp.segmento || ''}. Publico: ${emp.publico || ''}. Tom: ${a.tomDeVoz || 'profissional'}.`;
+  if (a.posicionamento) ctx += ` Posicionamento: ${a.posicionamento}.`;
+  if (a.pontosFortes?.length) ctx += ` Pontos fortes: ${a.pontosFortes.join(', ')}.`;
+  if (s && !s.error && s.title) {
+    ctx += ` Site (${s.url || emp.site}): titulo="${s.title}", descricao="${s.description || ''}", H1="${s.h1 || ''}", conteudo="${(s.bodyText || '').slice(0, 1500)}".`;
+  }
+  return ctx;
+}
+
+// ====== Helper: fetch com timeout ======
+function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timeout));
+}
+
 // ====== Helper: raspar conteudo de um site ======
 async function scrapeSite(url) {
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 MarketingAIStudio/1.0' },
-    });
+    }, 6000);
     const html = await res.text();
     const $ = cheerio.load(html);
     const title = $('title').text().trim();
@@ -144,9 +165,7 @@ app.post('/api/conteudo/gerar', async (req, res) => {
     const { tipo, tema, plataforma, objetivo, quantidade, empresa } = req.body;
     const db = loadDB();
     const emp = empresa || db.empresa;
-    const contextoEmpresa = emp
-      ? `Empresa: ${emp.nome}. Segmento: ${emp.segmento}. Publico: ${emp.publico}. Descricao: ${emp.descricao || ''}. Tom de voz: ${emp.analise?.tomDeVoz || 'profissional e acessivel'}. Posicionamento: ${emp.analise?.posicionamento || ''}.`
-      : 'Empresa ainda nao cadastrada.';
+    const contextoEmpresa = buildEmpresaContext(emp) || 'Empresa ainda nao cadastrada.';
 
     const system = `Voce e um copywriter e social media senior especializado em design grafico e marketing. Escreva em portugues brasileiro, com tom envolvente, especifico e orientado a conversao. Use ganchos fortes, beneficios claros e CTAs bem definidos.`;
 
@@ -193,9 +212,7 @@ app.post('/api/calendario/gerar', async (req, res) => {
     const { mes, ano, frequencia, plataformas, empresa } = req.body;
     const db = loadDB();
     const emp = empresa || db.empresa;
-    const contextoEmpresa = emp
-      ? `Empresa: ${emp.nome}. Segmento: ${emp.segmento}. Publico: ${emp.publico}. Tom: ${emp.analise?.tomDeVoz || ''}.`
-      : 'Empresa generica de design/marketing.';
+    const contextoEmpresa = buildEmpresaContext(emp) || 'Empresa generica de design/marketing.';
 
     const system = `Voce e um planejador de conteudo senior. Cria calendarios editoriais estrategicos considerando datas comemorativas brasileiras, sazonalidades e objetivos de marketing.`;
 
@@ -245,9 +262,7 @@ app.post('/api/concorrentes/analisar', async (req, res) => {
 
     const db = loadDB();
     const emp = empresa || db.empresa;
-    const contextoEmpresa = emp
-      ? `Nossa empresa: ${emp.nome} (${emp.segmento}). Publico: ${emp.publico}.`
-      : '';
+    const contextoEmpresa = buildEmpresaContext(emp);
 
     const system = `Voce e um analista de inteligencia competitiva. Compara concorrentes, identifica padroes, tendencias e oportunidades de diferenciacao. Seja concreto e acionavel.`;
 
@@ -294,7 +309,7 @@ app.post('/api/conteudo/melhorar', async (req, res) => {
   try {
     const { gancho, texto, cta, empresa } = req.body;
     const emp = empresa || loadDB().empresa;
-    const ctx = emp ? `Empresa: ${emp.nome}. Tom: ${emp.analise?.tomDeVoz || 'profissional'}.` : '';
+    const ctx = buildEmpresaContext(emp);
 
     const system = `Voce e um copywriter senior. Melhore textos de marketing mantendo a essencia mas tornando-os mais impactantes, persuasivos e profissionais. Escreva em portugues brasileiro.`;
     const user = `${ctx}
@@ -321,7 +336,7 @@ app.post('/api/conteudo/variacoes', async (req, res) => {
   try {
     const { gancho, texto, cta, empresa } = req.body;
     const emp = empresa || loadDB().empresa;
-    const ctx = emp ? `Empresa: ${emp.nome}. Segmento: ${emp.segmento}. Tom: ${emp.analise?.tomDeVoz || 'profissional'}.` : '';
+    const ctx = buildEmpresaContext(emp);
 
     const system = `Voce e um copywriter criativo. Gere variacoes de textos de marketing com abordagens diferentes (humor, emocional, direto, storytelling, etc). Portugues brasileiro.`;
     const user = `${ctx}
@@ -379,14 +394,11 @@ Responda APENAS com o JSON.`;
     // 2. Gerar imagem com a API escolhida pelo usuario
     const geminiKey = process.env.GEMINI_API_KEY;
     const openaiKey = process.env.OPENAI_API_KEY;
-    const genDir = path.join(__dirname, '..', 'public', 'generated');
-    fs.mkdirSync(genDir, { recursive: true });
 
-    // Helper: salvar imagem base64 em arquivo
+    // Helper: retorna imagem como data URL (funciona em qualquer ambiente)
     function salvarImagem(base64, ext = 'png') {
-      const imgName = `img_${Date.now()}.${ext}`;
-      fs.writeFileSync(path.join(genDir, imgName), Buffer.from(base64, 'base64'));
-      return `/generated/${imgName}`;
+      const mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+      return `data:${mime};base64,${base64}`;
     }
 
     // Helper: gerar com Gemini (NanoBanana)
@@ -396,10 +408,10 @@ Responda APENAS com o JSON.`;
       for (const model of models) {
         try {
           console.log(`[IMG] Tentando ${model}...`);
-          const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
+          const r = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ contents: [{ parts: [{ text: imgPrompt }] }], generationConfig: { responseModalities: ['IMAGE', 'TEXT'] } }),
-          });
+          }, 25000);
           const d = await r.json();
           if (d.error) { console.log(`[IMG] ${model} erro: ${d.error.message}`); continue; }
           const imgPart = (d.candidates?.[0]?.content?.parts || []).find(p => p.inlineData?.mimeType?.startsWith('image/'));
@@ -416,11 +428,11 @@ Responda APENAS com o JSON.`;
       if (!openaiKey) return null;
       try {
         console.log('[IMG] Tentando DALL-E 3...');
-        const r = await fetch('https://api.openai.com/v1/images/generations', {
+        const r = await fetchWithTimeout('https://api.openai.com/v1/images/generations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
           body: JSON.stringify({ model: 'dall-e-3', prompt: imgPrompt, n: 1, size: '1024x1024', quality: 'standard', response_format: 'b64_json' }),
-        });
+        }, 30000);
         const d = await r.json();
         if (d.data?.[0]?.b64_json) return { imageUrl: salvarImagem(d.data[0].b64_json), modelo: 'DALL-E 3' };
         if (d.data?.[0]?.url) return { imageUrl: d.data[0].url, modelo: 'DALL-E 3' };
@@ -459,7 +471,7 @@ app.post('/api/ideias/explorar', async (req, res) => {
   try {
     const { tema, profundidade, empresa } = req.body;
     const emp = empresa || loadDB().empresa;
-    const ctx = emp ? `Empresa: ${emp.nome}. Segmento: ${emp.segmento}. Publico: ${emp.publico}.` : '';
+    const ctx = buildEmpresaContext(emp);
 
     const system = `Voce e um estrategista de conteudo e especialista em SEO. Sua funcao e explorar um tema como uma arvore de ideias interconectadas, similar ao Answer The Public. Para cada tema, gere perguntas que o publico faz, subtemas derivados, angulos de conteudo, e conexoes entre ideias. Pense como o publico-alvo pensa: quais duvidas, desejos, medos e curiosidades eles tem sobre o tema? Portugues brasileiro.`;
 
@@ -502,7 +514,7 @@ app.post('/api/hashtags/gerar', async (req, res) => {
   try {
     const { tema, plataforma, nicho, empresa } = req.body;
     const emp = empresa || loadDB().empresa;
-    const ctx = emp ? `Empresa: ${emp.nome}. Segmento: ${emp.segmento}. Publico: ${emp.publico}.` : '';
+    const ctx = buildEmpresaContext(emp);
 
     const system = `Voce e um especialista em crescimento organico e hashtags para redes sociais. Gere conjuntos estrategicos de hashtags misturando populares (alto alcance), medias (engajamento) e nichadas (conversao). Portugues brasileiro.`;
     const user = `${ctx}
@@ -533,9 +545,33 @@ app.post('/api/briefing/gerar', async (req, res) => {
   try {
     const { tipo, tema, plataforma, texto, empresa } = req.body;
     const emp = empresa || loadDB().empresa;
-    const ctx = emp ? `Empresa: ${emp.nome}. Segmento: ${emp.segmento}. Tom: ${emp.analise?.tomDeVoz || ''}.` : '';
+    const a = emp?.analise || {};
+    const s = emp?.scraped || {};
 
-    const system = `Voce e um diretor de arte e designer senior. Crie briefings visuais detalhados e profissionais que um designer grafico consiga executar perfeitamente. Inclua especificacoes tecnicas, referencias de estilo e direcao criativa. Portugues brasileiro.`;
+    // Contexto rico da empresa incluindo dados do site
+    let ctx = '';
+    if (emp) {
+      ctx = `EMPRESA:
+- Nome: ${emp.nome || ''}
+- Segmento: ${emp.segmento || ''}
+- Publico-alvo: ${emp.publico || ''}
+- Descricao: ${emp.descricao || ''}
+- Tom de voz: ${a.tomDeVoz || ''}
+- Posicionamento: ${a.posicionamento || ''}
+- Pontos fortes: ${(a.pontosFortes || []).join(', ')}
+- Persona: ${a.personaPrincipal ? `${a.personaPrincipal.nome}, ${a.personaPrincipal.idade}` : ''}`;
+
+      if (s && !s.error && s.title) {
+        ctx += `\n\nDADOS DO SITE DA EMPRESA (${s.url || emp.site}):
+- Titulo do site: ${s.title || ''}
+- Meta descricao: ${s.description || ''}
+- Titulos H1: ${s.h1 || ''}
+- Titulos H2: ${s.h2 || ''}
+- Conteudo principal: ${(s.bodyText || '').slice(0, 2000)}`;
+      }
+    }
+
+    const system = `Voce e um diretor de arte e designer senior especializado em marketing digital. Crie briefings visuais detalhados e profissionais que um designer grafico consiga executar perfeitamente. Use as informacoes do site e da marca da empresa para criar briefings alinhados com a identidade visual existente. Inclua especificacoes tecnicas, referencias de estilo e direcao criativa. Portugues brasileiro.`;
     const user = `${ctx}
 
 Crie um briefing completo de design para:
@@ -543,6 +579,8 @@ Tipo: ${tipo || 'post Instagram'}
 Tema: ${tema}
 Plataforma: ${plataforma || 'Instagram'}
 Texto/copy: ${texto || 'nao definido'}
+
+IMPORTANTE: Baseie a paleta de cores, tipografia e estilo visual na identidade da empresa e no que voce viu no site dela. O briefing deve ser coerente com a marca.
 
 Entregue em JSON valido:
 {
@@ -571,7 +609,7 @@ app.post('/api/reciclar/gerar', async (req, res) => {
   try {
     const { conteudoOriginal, formatoOriginal, empresa } = req.body;
     const emp = empresa || loadDB().empresa;
-    const ctx = emp ? `Empresa: ${emp.nome}. Tom: ${emp.analise?.tomDeVoz || 'profissional'}.` : '';
+    const ctx = buildEmpresaContext(emp);
 
     const system = `Voce e um social media senior. Sua especialidade e transformar um unico conteudo em multiplos formatos para diferentes plataformas, maximizando o alcance sem parecer repetitivo. Cada versao deve ser nativa da plataforma. Portugues brasileiro.`;
     const user = `${ctx}
@@ -609,7 +647,7 @@ app.post('/api/bio/gerar', async (req, res) => {
     if (!emp) return res.json({ ok: false, error: 'Cadastre a empresa primeiro' });
 
     const system = `Voce e um especialista em branding e copywriting para redes sociais. Crie bios profissionais, cativantes e otimizadas para cada plataforma. Use emojis de forma estrategica. Portugues brasileiro.`;
-    const user = `Empresa: ${emp.nome}. Segmento: ${emp.segmento}. Publico: ${emp.publico}. Descricao: ${emp.descricao || ''}. Tom: ${emp.analise?.tomDeVoz || 'profissional'}. Localizacao: ${emp.localizacao || ''}.
+    const user = `${buildEmpresaContext(emp)} Localizacao: ${emp.localizacao || ''}.
 
 Gere bios otimizadas para cada plataforma:
 
@@ -635,11 +673,27 @@ Responda APENAS com o JSON.`;
 // ====== INTEGRAÇÕES: META (Instagram/Facebook), WIX, SITES IA ======
 // ====================================================================
 
-// ====== Helper: upload imagem para URL pública (necessário para APIs) ======
+// ====== Helper: extrair base64 de imagem (data URL ou arquivo local) ======
 async function getImageAsBase64(imgPath) {
-  const fullPath = path.join(__dirname, '..', 'public', imgPath);
-  if (fs.existsSync(fullPath)) {
-    return fs.readFileSync(fullPath).toString('base64');
+  // Se já é data URL, extrai o base64
+  if (imgPath && imgPath.startsWith('data:')) {
+    const match = imgPath.match(/^data:[^;]+;base64,(.+)$/);
+    return match ? match[1] : null;
+  }
+  // Se é URL externa, baixa a imagem
+  if (imgPath && imgPath.startsWith('http')) {
+    try {
+      const r = await fetch(imgPath);
+      const buf = Buffer.from(await r.arrayBuffer());
+      return buf.toString('base64');
+    } catch { return null; }
+  }
+  // Arquivo local (apenas desenvolvimento)
+  if (!isVercel && imgPath) {
+    const fullPath = path.join(__dirname, '..', 'public', imgPath);
+    if (fs.existsSync(fullPath)) {
+      return fs.readFileSync(fullPath).toString('base64');
+    }
   }
   return null;
 }
@@ -667,14 +721,11 @@ app.post('/api/conexoes/salvar', (req, res) => {
   try {
     const { plataforma, dados } = req.body;
 
-    // Se for config do Meta, salva no .env
+    // Se for config do Meta, salva no DB e atualiza process.env
     if (plataforma === 'meta_config' && dados.appId && dados.appSecret) {
-      const envPath = path.join(__dirname, '..', '.env');
-      let envContent = fs.readFileSync(envPath, 'utf-8');
-      envContent = envContent.replace(/META_APP_ID=.*/, `META_APP_ID=${dados.appId}`);
-      envContent = envContent.replace(/META_APP_SECRET=.*/, `META_APP_SECRET=${dados.appSecret}`);
-      fs.writeFileSync(envPath, envContent);
-      // Atualiza process.env em runtime
+      const db = loadDB();
+      db.conexoes.meta_config = { appId: dados.appId, appSecret: dados.appSecret };
+      saveDB(db);
       process.env.META_APP_ID = dados.appId;
       process.env.META_APP_SECRET = dados.appSecret;
       return res.json({ ok: true, msg: 'Credenciais Meta salvas' });
@@ -789,7 +840,25 @@ app.post('/api/publicar/facebook', async (req, res) => {
 
     if (imageUrl) {
       // Post com imagem
-      const imgFullUrl = imageUrl.startsWith('http') ? imageUrl : `http://localhost:${PORT}${imageUrl}`;
+      if (imageUrl.startsWith('data:')) {
+        // Imagem base64: upload direto via multipart
+        const base64 = imageUrl.replace(/^data:[^;]+;base64,/, '');
+        const imgBuffer = Buffer.from(base64, 'base64');
+        const FormData = (await import('node-fetch')).FormData || globalThis.FormData;
+        const blob = new Blob([imgBuffer], { type: 'image/png' });
+        const formData = new FormData();
+        formData.append('source', blob, 'image.png');
+        formData.append('message', texto);
+        formData.append('access_token', meta.pageToken);
+        endpoint = `https://graph.facebook.com/v19.0/${meta.pageId}/photos`;
+        const r = await fetch(endpoint, { method: 'POST', body: formData });
+        const data = await r.json();
+        if (data.error) return res.json({ ok: false, error: data.error.message });
+        meta.ultimaPostagem = new Date().toISOString();
+        saveDB(db);
+        return res.json({ ok: true, postId: data.id || data.post_id, plataforma: 'facebook' });
+      }
+      const imgFullUrl = imageUrl.startsWith('http') ? imageUrl : imageUrl;
       endpoint = `https://graph.facebook.com/v19.0/${meta.pageId}/photos`;
       body = { url: imgFullUrl, message: texto, access_token: meta.pageToken };
     } else {
@@ -832,7 +901,10 @@ app.post('/api/publicar/instagram', async (req, res) => {
     if (!meta?.instagramId) return res.json({ ok: false, error: 'Instagram Business nao conectado.' });
     if (!imageUrl) return res.json({ ok: false, error: 'Instagram exige imagem. Gere uma imagem primeiro.' });
 
-    const imgFullUrl = imageUrl.startsWith('http') ? imageUrl : `http://localhost:${PORT}${imageUrl}`;
+    if (imageUrl.startsWith('data:')) {
+      return res.json({ ok: false, error: 'Instagram requer URL pública para imagens. Faça upload da imagem para um serviço de hospedagem primeiro.' });
+    }
+    const imgFullUrl = imageUrl.startsWith('http') ? imageUrl : imageUrl;
 
     // Passo 1: Criar container de mídia
     const createUrl = `https://graph.facebook.com/v19.0/${meta.instagramId}/media`;
@@ -1161,14 +1233,14 @@ if (!isVercel) cron.schedule('* * * * *', async () => {
 
     for (const plat of ag.plataformas) {
       try {
-        let endpoint;
-        if (plat === 'facebook') endpoint = `http://localhost:${PORT}/api/publicar/facebook`;
-        else if (plat === 'instagram') endpoint = `http://localhost:${PORT}/api/publicar/instagram`;
-        else if (plat === 'wix') endpoint = `http://localhost:${PORT}/api/publicar/wix`;
-        else if (plat === 'siteIA') endpoint = `http://localhost:${PORT}/api/publicar/site-ia`;
+        let routePath;
+        if (plat === 'facebook') routePath = '/api/publicar/facebook';
+        else if (plat === 'instagram') routePath = '/api/publicar/instagram';
+        else if (plat === 'wix') routePath = '/api/publicar/wix';
+        else if (plat === 'siteIA') routePath = '/api/publicar/site-ia';
         else continue;
 
-        const r = await fetch(endpoint, {
+        const r = await fetch(`http://localhost:${PORT}${routePath}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ texto: ag.texto, imageUrl: ag.imageUrl, titulo: ag.titulo }),
         });
@@ -1185,6 +1257,15 @@ if (!isVercel) cron.schedule('* * * * *', async () => {
 });
 
 // ====== ROTA: Publicar imediatamente em múltiplas plataformas ======
+// Helper: simula req/res para chamar rotas internamente sem localhost
+function callRoute(app, method, path, body) {
+  return new Promise((resolve) => {
+    const mockReq = { body, method: method.toUpperCase(), url: path, headers: { 'content-type': 'application/json' } };
+    const mockRes = { json: (data) => resolve(data), status: () => mockRes };
+    app.handle(mockReq, mockRes, () => resolve({ ok: false, error: 'Rota não encontrada' }));
+  });
+}
+
 app.post('/api/publicar/multi', async (req, res) => {
   try {
     const { plataformas, texto, imageUrl, titulo } = req.body;
@@ -1192,21 +1273,365 @@ app.post('/api/publicar/multi', async (req, res) => {
 
     for (const plat of (plataformas || [])) {
       try {
-        let endpoint;
-        if (plat === 'facebook') endpoint = `http://localhost:${PORT}/api/publicar/facebook`;
-        else if (plat === 'instagram') endpoint = `http://localhost:${PORT}/api/publicar/instagram`;
-        else if (plat === 'wix') endpoint = `http://localhost:${PORT}/api/publicar/wix`;
-        else if (plat === 'siteIA') endpoint = `http://localhost:${PORT}/api/publicar/site-ia`;
+        let routePath;
+        if (plat === 'facebook') routePath = '/api/publicar/facebook';
+        else if (plat === 'instagram') routePath = '/api/publicar/instagram';
+        else if (plat === 'wix') routePath = '/api/publicar/wix';
+        else if (plat === 'siteIA') routePath = '/api/publicar/site-ia';
         else continue;
 
-        const r = await fetch(endpoint, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ texto, imageUrl, titulo }),
-        });
-        resultados[plat] = await r.json();
+        resultados[plat] = await callRoute(app, 'POST', routePath, { texto, imageUrl, titulo });
       } catch (e) { resultados[plat] = { ok: false, error: e.message }; }
     }
     res.json({ ok: true, resultados });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// ====== ROTA: Campanha Completa de Marketing ======
+app.post('/api/campanha/gerar', async (req, res) => {
+  try {
+    const { objetivo, tema, plataformas, orcamento, duracao, empresa } = req.body;
+    const emp = empresa || loadDB().empresa;
+    const ctx = buildEmpresaContext(emp);
+
+    const system = `Voce e um estrategista de marketing digital senior e diretor criativo. Crie campanhas de marketing completas, com conceito criativo, copy para cada plataforma, cronograma, KPIs e direcao visual. Seja especifico e acionavel. Portugues brasileiro.`;
+    const user = `${ctx}
+
+Crie uma campanha de marketing COMPLETA:
+Objetivo: ${objetivo || 'engajamento e conversao'}
+Tema/Produto: ${tema}
+Plataformas: ${(plataformas || ['Instagram', 'Facebook']).join(', ')}
+Orcamento estimado: ${orcamento || 'a definir'}
+Duracao: ${duracao || '1 semana'}
+
+Entregue em JSON valido:
+{
+  "nomeCampanha": "nome criativo da campanha",
+  "conceito": "descricao do conceito criativo e narrativa da campanha",
+  "publicoAlvo": "segmento especifico para esta campanha",
+  "mensagemChave": "a mensagem principal que queremos comunicar",
+  "hashtags": "#campanha #especificas",
+  "cronograma": [
+    {"dia": "Dia 1", "acao": "descricao", "plataforma": "Instagram", "formato": "post/stories/reel"}
+  ],
+  "pecas": [
+    {
+      "plataforma": "Instagram Feed",
+      "formato": "post unico / carrossel / stories / reel",
+      "titulo": "titulo ou gancho",
+      "texto": "copy completo pronto para publicar",
+      "cta": "call to action",
+      "hashtags": "#hashtags",
+      "direcaoVisual": "descricao detalhada da imagem/video",
+      "dimensoes": "1080x1080 / 1080x1920 / etc"
+    }
+  ],
+  "emailMarketing": {
+    "assunto": "subject line do email",
+    "preheader": "texto preview",
+    "corpo": "corpo do email em texto",
+    "cta": "botao CTA",
+    "remetente": "nome sugerido"
+  },
+  "kpis": ["KPI 1 com meta", "KPI 2 com meta"],
+  "investimento": {"sugestao": "descricao de como alocar o orcamento", "divisao": [{"plataforma": "...", "percentual": "..."}]}
+}
+Responda APENAS com o JSON.`;
+
+    const raw = await askClaude(system, user, 4000);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    const resultado = jsonMatch ? JSON.parse(jsonMatch[0]) : { raw };
+    res.json({ ok: true, resultado });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// ====== ROTA: Gerador de Google Ads ======
+app.post('/api/googleads/gerar', async (req, res) => {
+  try {
+    const { produto, objetivo, publicoAlvo, quantidade, empresa } = req.body;
+    const emp = empresa || loadDB().empresa;
+    const ctx = buildEmpresaContext(emp);
+
+    const system = `Voce e um especialista certificado em Google Ads com 10+ anos de experiencia. Crie anuncios otimizados para alta performance seguindo as melhores praticas do Google. Portugues brasileiro.`;
+    const user = `${ctx}
+
+Crie ${quantidade || 3} variacoes de anuncios Google Ads:
+Produto/Servico: ${produto}
+Objetivo: ${objetivo || 'conversao'}
+Publico: ${publicoAlvo || 'definido pela empresa'}
+
+Entregue em JSON valido:
+{
+  "anuncios": [
+    {
+      "tipo": "Search / Display / Performance Max",
+      "titulos": ["titulo 1 (max 30 chars)", "titulo 2", "titulo 3"],
+      "descricoes": ["descricao 1 (max 90 chars)", "descricao 2"],
+      "extensoes": {
+        "sitelinks": [{"titulo": "...", "descricao": "..."}],
+        "callouts": ["destaque 1", "destaque 2"],
+        "snippets": ["recurso 1", "recurso 2"]
+      },
+      "palavrasChave": ["keyword 1", "keyword 2", "keyword 3"],
+      "palavrasNegativas": ["negativa 1"],
+      "lancesugerido": "CPC sugerido",
+      "dica": "dica de otimizacao"
+    }
+  ],
+  "estrategia": "recomendacao geral de estrategia de lances e segmentacao",
+  "orcamentoDiario": "sugestao de orcamento diario"
+}
+Responda APENAS com o JSON.`;
+
+    const raw = await askClaude(system, user, 3000);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    const resultado = jsonMatch ? JSON.parse(jsonMatch[0]) : { raw };
+    res.json({ ok: true, resultado });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// ====== ROTA: Gerador de Email Marketing ======
+app.post('/api/email/gerar', async (req, res) => {
+  try {
+    const { tipo, objetivo, tema, empresa } = req.body;
+    const emp = empresa || loadDB().empresa;
+    const ctx = buildEmpresaContext(emp);
+
+    const system = `Voce e um especialista em email marketing e copywriting de conversao. Crie emails profissionais com altas taxas de abertura e clique. Use tecnicas de persuasao, urgencia e personalizacao. Portugues brasileiro.`;
+    const user = `${ctx}
+
+Crie um email marketing completo:
+Tipo: ${tipo || 'promocional'}
+Objetivo: ${objetivo || 'conversao'}
+Tema: ${tema}
+
+Entregue em JSON valido:
+{
+  "assunto": "subject line principal (max 60 chars)",
+  "assuntosAlternativos": ["opcao A/B test 1", "opcao A/B test 2"],
+  "preheader": "texto de preview (max 100 chars)",
+  "remetente": {"nome": "...", "sugestaoEmail": "..."},
+  "corpo": {
+    "saudacao": "abertura personalizada",
+    "introducao": "paragrafo de abertura que prende atencao",
+    "conteudoPrincipal": "corpo do email com beneficios e proposta de valor",
+    "prova": "depoimento, numero ou fato que gera credibilidade",
+    "cta": {"texto": "texto do botao", "cor": "#hex sugerida"},
+    "ps": "P.S. com urgencia ou bonus extra"
+  },
+  "designSugerido": {
+    "header": "descricao do banner/header do email",
+    "layout": "1 coluna / 2 colunas / hero image",
+    "paleta": ["#hex1", "#hex2", "#hex3"],
+    "imagensSugeridas": ["descricao imagem 1", "descricao imagem 2"]
+  },
+  "segmentacao": "para quem enviar este email",
+  "melhorHorario": "dia e horario sugerido para envio",
+  "metricas": {"taxaAberturaEsperada": "...", "taxaCliqueEsperada": "..."}
+}
+Responda APENAS com o JSON.`;
+
+    const raw = await askClaude(system, user, 3000);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    const resultado = jsonMatch ? JSON.parse(jsonMatch[0]) : { raw };
+    res.json({ ok: true, resultado });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// ====== ROTA: Gerador de YouTube Thumbnails ======
+app.post('/api/thumbnail/gerar', async (req, res) => {
+  try {
+    const { tituloVideo, tema, estilo, empresa } = req.body;
+    const emp = empresa || loadDB().empresa;
+    const ctx = buildEmpresaContext(emp);
+
+    const system = `Voce e um designer de thumbnails do YouTube com milhoes de views. Crie briefings de thumbnails que geram alto CTR. Conhece psicologia visual, cores de alta conversao e composicao para mobile. Portugues brasileiro.`;
+    const user = `${ctx}
+
+Crie um briefing de thumbnail para YouTube:
+Titulo do video: ${tituloVideo}
+Tema: ${tema || tituloVideo}
+Estilo: ${estilo || 'profissional e chamativo'}
+
+Entregue em JSON valido:
+{
+  "conceito": "descricao do conceito visual da thumbnail",
+  "dimensoes": "1280x720",
+  "elementos": {
+    "textoOverlay": "texto curto que aparece na thumbnail (max 5 palavras)",
+    "fonteEstilo": "tipo de fonte, tamanho, cor, stroke/sombra",
+    "expressaoRosto": "se tiver pessoa: qual expressao facial usar",
+    "fundoDescricao": "descricao do background",
+    "elementosGraficos": ["setas", "circulos", "emojis", "icones sugeridos"],
+    "corDominante": "#hex - cor que domina a thumbnail",
+    "contraste": "como criar contraste visual para destacar no feed"
+  },
+  "paleta": ["#hex1", "#hex2", "#hex3"],
+  "composicao": "descricao de onde fica cada elemento (regra dos tercos, etc)",
+  "promptImagem": "prompt em ingles para gerar a thumbnail com IA",
+  "naoFazer": ["erro 1 a evitar", "erro 2"],
+  "referenciasEstilo": "descricao de estilos de thumbnails populares similares"
+}
+Responda APENAS com o JSON.`;
+
+    const raw = await askClaude(system, user, 2000);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    const resultado = jsonMatch ? JSON.parse(jsonMatch[0]) : { raw };
+    res.json({ ok: true, resultado });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// ====== ROTA: Photoshoot IA (produto → foto profissional) ======
+app.post('/api/photoshoot/gerar', async (req, res) => {
+  try {
+    const { descricaoProduto, estilo, cenario, empresa } = req.body;
+    const emp = empresa || loadDB().empresa;
+
+    const promptEN = `Professional product photography, ${estilo || 'studio lighting, clean white background'}, ${descricaoProduto}, ${cenario || 'minimalist setting'}, commercial quality, high resolution, sharp focus, soft shadows, e-commerce ready, brand photography`;
+
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (!geminiKey) {
+      return res.json({ ok: false, error: 'GEMINI_API_KEY nao configurada. Necessaria para Photoshoot IA.' });
+    }
+
+    const models = ['gemini-2.0-flash-preview-image-generation', 'gemini-2.0-flash-exp'];
+    for (const model of models) {
+      try {
+        const r = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: promptEN }] }], generationConfig: { responseModalities: ['IMAGE', 'TEXT'] } }),
+        }, 30000);
+        const d = await r.json();
+        if (d.error) continue;
+        const imgPart = (d.candidates?.[0]?.content?.parts || []).find(p => p.inlineData?.mimeType?.startsWith('image/'));
+        if (imgPart) {
+          const imageUrl = `data:${imgPart.inlineData.mimeType};base64,${imgPart.inlineData.data}`;
+          return res.json({ ok: true, imageUrl, modelo: model, promptUsado: promptEN });
+        }
+      } catch (e) { console.log(`[PHOTOSHOOT] ${model} falhou: ${e.message}`); }
+    }
+    res.json({ ok: false, error: 'Nao foi possivel gerar a foto. Tente novamente.' });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// ====== ROTA: Edição por linguagem natural ======
+app.post('/api/editar/natural', async (req, res) => {
+  try {
+    const { conteudoOriginal, instrucao, empresa } = req.body;
+    const emp = empresa || loadDB().empresa;
+    const ctx = buildEmpresaContext(emp);
+
+    const system = `Voce e um editor de conteudo profissional. O usuario vai te dar um texto e uma instrucao de edicao em linguagem natural. Aplique a edicao mantendo o tom e estilo da marca. Portugues brasileiro.`;
+    const user = `${ctx}
+
+CONTEUDO ORIGINAL:
+${conteudoOriginal}
+
+INSTRUCAO DE EDICAO:
+${instrucao}
+
+Aplique a edicao e retorne em JSON:
+{
+  "textoEditado": "o texto completo apos a edicao",
+  "mudancas": ["descricao da mudanca 1", "descricao da mudanca 2"],
+  "dicaExtra": "sugestao adicional opcional"
+}
+Responda APENAS com o JSON.`;
+
+    const raw = await askClaude(system, user, 2000);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    const resultado = jsonMatch ? JSON.parse(jsonMatch[0]) : { raw };
+    res.json({ ok: true, resultado });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// ====== ROTA: Business DNA melhorado (extrai paleta, fontes, estilo) ======
+app.post('/api/empresa/dna', async (req, res) => {
+  try {
+    const { site, empresa } = req.body;
+    const emp = empresa || loadDB().empresa;
+    const scraped = site ? await scrapeSite(site) : (emp?.scraped || null);
+    if (!scraped || scraped.error) return res.json({ ok: false, error: 'Nao foi possivel acessar o site.' });
+
+    const system = `Voce e um especialista em branding e identidade visual. Analise o conteudo de um site e extraia a identidade visual e de marca com precisao. Portugues brasileiro.`;
+    const user = `Analise este site e extraia o "DNA da marca":
+
+SITE: ${scraped.url}
+TITULO: ${scraped.title}
+META: ${scraped.description}
+H1: ${scraped.h1}
+H2: ${scraped.h2}
+CONTEUDO: ${(scraped.bodyText || '').slice(0, 3000)}
+
+Entregue em JSON valido:
+{
+  "paleta": {
+    "primaria": "#hex",
+    "secundaria": "#hex",
+    "acento": "#hex",
+    "fundo": "#hex",
+    "texto": "#hex"
+  },
+  "tipografia": {
+    "titulos": "fonte sugerida para titulos baseada no estilo do site",
+    "corpo": "fonte sugerida para corpo de texto",
+    "estilo": "serif/sans-serif/display/etc"
+  },
+  "estiloVisual": "descricao do estilo visual geral (minimalista, corporativo, divertido, etc)",
+  "mood": "descricao do mood/atmosfera da marca",
+  "personalidade": ["adjetivo 1", "adjetivo 2", "adjetivo 3", "adjetivo 4"],
+  "elementosRecorrentes": ["elemento visual 1 identificado", "elemento 2"],
+  "tomComunicacao": "descricao detalhada do tom",
+  "diferenciais": ["diferencial 1", "diferencial 2"],
+  "publicoPercebido": "descricao do publico que o site parece mirar",
+  "concorrenciaEstimada": "posicionamento percebido no mercado"
+}
+Responda APENAS com o JSON.`;
+
+    const raw = await askClaude(system, user, 2500);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    const resultado = jsonMatch ? JSON.parse(jsonMatch[0]) : { raw };
+    res.json({ ok: true, dna: resultado });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// ====== ROTA: Gerador de Ideias por Nicho ======
+app.post('/api/ideias/nicho', async (req, res) => {
+  try {
+    const { nicho, objetivo, quantidade, empresa } = req.body;
+    const emp = empresa || loadDB().empresa;
+    const ctx = buildEmpresaContext(emp);
+
+    const system = `Voce e um estrategista de conteudo criativo e trend hunter. Gere ideias inovadoras, virais e acionaveis para marketing digital. Cada ideia deve ser unica e especifica o suficiente para ser executada imediatamente. Portugues brasileiro.`;
+    const user = `${ctx}
+
+Gere ${quantidade || 10} ideias de conteudo para:
+Nicho: ${nicho}
+Objetivo: ${objetivo || 'engajamento e autoridade'}
+
+Entregue em JSON valido:
+{
+  "ideias": [
+    {
+      "titulo": "nome chamativo da ideia",
+      "descricao": "descricao em 2-3 frases do que fazer",
+      "formato": "post / carrossel / video / stories / reel / blog / email",
+      "plataforma": "melhor plataforma para esta ideia",
+      "dificuldade": "facil / medio / avancado",
+      "potencialViral": "baixo / medio / alto",
+      "gancho": "frase de abertura sugerida",
+      "referencia": "descricao de um exemplo ou tendencia similar"
+    }
+  ],
+  "tendencias": ["tendencia 1 do nicho", "tendencia 2"],
+  "dicaExtra": "recomendacao geral para o nicho"
+}
+Responda APENAS com o JSON.`;
+
+    const raw = await askClaude(system, user, 3000);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    const resultado = jsonMatch ? JSON.parse(jsonMatch[0]) : { raw };
+    res.json({ ok: true, resultado });
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 

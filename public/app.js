@@ -1,15 +1,48 @@
 // Marketing AI Studio - Frontend v2: Wizard + Dashboard + Modal expandido + Imagens
 
 // ========== STORAGE ==========
-const STORAGE_KEY = 'marketing_ai_studio_v2';
+const STORAGE_KEY = 'marketing_ai_studio_v3';
+const DEFAULT_EMPRESA_DATA = { historico: [], calendario: null, concorrentes: null, galeria: [], pastas: ['Geral'] };
+
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : { empresa: null, historico: [], calendario: null, concorrentes: null, galeria: [] };
-  } catch { return { empresa: null, historico: [], calendario: null, concorrentes: null, galeria: [] }; }
+    if (raw) return JSON.parse(raw);
+    // Migração do v2
+    const v2 = localStorage.getItem('marketing_ai_studio_v2');
+    if (v2) {
+      const old = JSON.parse(v2);
+      if (old.empresa) {
+        const id = 'emp_' + Date.now();
+        const empresas = [{ id, ...old.empresa }];
+        const dados = {};
+        dados[id] = { historico: old.historico || [], calendario: old.calendario || null, concorrentes: old.concorrentes || null, galeria: old.galeria || [], pastas: old.pastas || ['Geral'] };
+        return { empresas, empresaAtualId: id, dados };
+      }
+    }
+    return { empresas: [], empresaAtualId: null, dados: {} };
+  } catch { return { empresas: [], empresaAtualId: null, dados: {} }; }
 }
 function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
 let state = loadState();
+
+// Helpers para acessar dados da empresa atual
+function empresaAtual() { return state.empresas.find(e => e.id === state.empresaAtualId) || null; }
+function dadosEmpresa() {
+  if (!state.empresaAtualId) return { ...DEFAULT_EMPRESA_DATA };
+  if (!state.dados[state.empresaAtualId]) state.dados[state.empresaAtualId] = { ...DEFAULT_EMPRESA_DATA, galeria: [], historico: [], pastas: ['Geral'] };
+  return state.dados[state.empresaAtualId];
+}
+
+// Migração de pastas para itens da galeria
+Object.values(state.dados || {}).forEach(d => {
+  if (!d.pastas) d.pastas = ['Geral'];
+  (d.galeria || []).forEach(item => { if (!item.pasta) item.pasta = 'Geral'; });
+});
+
+// Variáveis de gerenciamento da galeria
+let modoGerenciar = false;
+let selecionados = new Set();
 
 // ========== HELPERS ==========
 const $ = id => document.getElementById(id);
@@ -27,17 +60,20 @@ function hideLoading() { $('loading-overlay').classList.add('hidden'); }
 
 // ========== BOOT ==========
 window.addEventListener('DOMContentLoaded', () => {
-  state.empresa ? showDashboard() : showWizard();
+  empresaAtual() ? showDashboard() : showWizard();
   renderHistorico();
 });
 function showWizard() { $('wizard').classList.remove('hidden'); $('dashboard').classList.add('hidden'); }
 function showDashboard() {
   $('wizard').classList.add('hidden'); $('dashboard').classList.remove('hidden');
-  $('topbar-nome').textContent = state.empresa.nome || '—';
-  $('topbar-segmento').textContent = state.empresa.segmento || '—';
+  const emp = empresaAtual();
+  $('topbar-nome').textContent = emp?.nome || '—';
+  $('topbar-segmento').textContent = emp?.segmento || '—';
+  renderEmpresaSelector();
   renderPerfil();
-  if (state.calendario) renderCalendario();
-  if (state.concorrentes) renderConcorrentes();
+  const d = dadosEmpresa();
+  if (d.calendario) renderCalendario();
+  if (d.concorrentes) renderConcorrentes();
 }
 
 // ========== WIZARD ==========
@@ -69,34 +105,165 @@ async function finalizarOnboarding() {
     const r = await postJSON('/api/empresa/analisar', dados);
     clearInterval(interval);
     if (!r.ok) { alert('Erro: ' + (r.error || 'desconhecido')); goToStep(3); return; }
-    state.empresa = { ...dados, analise: r.empresa.analise, scraped: r.empresa.scraped, criadoEm: new Date().toISOString() };
+    const id = 'emp_' + Date.now();
+    const novaEmpresa = { id, ...dados, analise: r.empresa.analise, scraped: r.empresa.scraped, criadoEm: new Date().toISOString() };
+    state.empresas.push(novaEmpresa);
+    state.empresaAtualId = id;
+    state.dados[id] = { historico: [], calendario: null, concorrentes: null, galeria: [], pastas: ['Geral'] };
     saveState();
     if (dados.concorrentesUrls) {
       const urls = dados.concorrentesUrls.split(',').map(s => s.trim()).filter(Boolean);
-      try { const rc = await postJSON('/api/concorrentes/analisar', { concorrentes: urls.map((u,i) => ({nome:`Concorrente ${i+1}`,site:u})), empresa: state.empresa }); if (rc.ok) { state.concorrentes = rc.resultado; saveState(); } } catch {}
+      try { const rc = await postJSON('/api/concorrentes/analisar', { concorrentes: urls.map((u,i) => ({nome:`Concorrente ${i+1}`,site:u})), empresa: empresaAtual() }); if (rc.ok) { dadosEmpresa().concorrentes = rc.resultado; saveState(); } } catch {}
     }
     steps.forEach(s => { $(s).classList.remove('active'); $(s).classList.add('done'); });
     await new Promise(r => setTimeout(r, 600));
-    showDashboard(); toast('Pronto! Bem-vinda ao seu studio ✨');
+    showDashboard(); toast('Pronto! Empresa cadastrada, Deborah ✨');
   } catch (err) { clearInterval(interval); alert('Erro: ' + err.message); goToStep(3); }
 }
 
-// ========== SIDEBAR PERFIL ==========
-function toggleSidebar() { $('sidebar-perfil').classList.toggle('hidden'); }
-function renderPerfil() {
-  const e = state.empresa; if (!e) return; const a = e.analise || {};
-  $('perfil-conteudo').innerHTML = `
-    <h4>Empresa</h4><p><strong>${esc(e.nome)}</strong><br>${esc(e.segmento)}</p>
-    ${e.site ? `<p style="font-size:12px;color:#8a8aa0;">${esc(e.site)}</p>` : ''}
-    <h4>Público</h4><p>${esc(e.publico)}</p>
-    ${a.resumoMarca ? `<h4>Resumo da marca</h4><p>${esc(a.resumoMarca)}</p>` : ''}
-    ${a.posicionamento ? `<h4>Posicionamento</h4><p>${esc(a.posicionamento)}</p>` : ''}
-    ${a.tomDeVoz ? `<h4>Tom de voz</h4><p>${esc(a.tomDeVoz)}</p>` : ''}
-    ${a.pontosFortes ? `<h4>Pontos fortes</h4><ul>${a.pontosFortes.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-    ${a.pontosFracos ? `<h4>Pontos fracos</h4><ul>${a.pontosFracos.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-    ${a.oportunidades ? `<h4>Oportunidades</h4><ul>${a.oportunidades.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-    ${a.personaPrincipal ? `<h4>Persona</h4><p><strong>${esc(a.personaPrincipal.nome)}</strong> — ${esc(a.personaPrincipal.idade)}</p><p><em>Dores:</em> ${(a.personaPrincipal.dores||[]).map(esc).join(', ')}</p><p><em>Desejos:</em> ${(a.personaPrincipal.desejos||[]).map(esc).join(', ')}</p>` : ''}
-    ${a.sugestoesImediatas ? `<h4>Ações imediatas</h4><ul>${a.sugestoesImediatas.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>` : ''}`;
+// ========== SIDEBAR PERFIL (legado — redirecionado para view) ==========
+function toggleSidebar() { toggleView('perfil'); }
+function renderPerfil() { /* renderizado pela view-perfil agora */ }
+
+// ========== PERFIL COMPLETO (PÁGINA) ==========
+function renderPerfilCompleto() {
+  const e = empresaAtual(); if (!e) return;
+  const a = e.analise || {};
+  const s = e.scraped || {};
+  const d = dadosEmpresa();
+  const totalConteudos = (d.galeria || []).length;
+  const totalImgs = (d.galeria || []).filter(x => x.tipo === 'imagem').length;
+  const totalPosts = (d.galeria || []).filter(x => x.tipo === 'post').length;
+  const totalCal = (d.calendario?.posts || []).length;
+  const criadoEm = e.criadoEm ? new Date(e.criadoEm).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
+
+  $('perfil-page-content').innerHTML = `
+    <!-- HERO -->
+    <div class="perfil-hero">
+      <div class="perfil-hero-info">
+        <div class="perfil-avatar">${esc(e.nome?.charAt(0) || 'E')}</div>
+        <div>
+          <h1 class="perfil-nome">${esc(e.nome)}</h1>
+          <p class="perfil-segmento">${esc(e.segmento)}</p>
+          <div class="perfil-meta">
+            ${e.localizacao ? `<span>📍 ${esc(e.localizacao)}</span>` : ''}
+            ${e.site ? `<span>🌐 <a href="${esc(e.site)}" target="_blank" style="color:#c084fc;">${esc(e.site.replace(/^https?:\/\//, ''))}</a></span>` : ''}
+            ${e.redesSociais ? `<span>📱 ${esc(e.redesSociais)}</span>` : ''}
+            <span>📅 Desde ${criadoEm}</span>
+          </div>
+        </div>
+      </div>
+      <div class="perfil-hero-actions">
+        <button class="btn-ghost-sm" onclick="editarEmpresaAtual()">✏️ Editar</button>
+        <button class="btn-ghost-sm" onclick="adicionarEmpresa()">＋ Nova empresa</button>
+        <button class="btn-ghost-sm btn-danger" onclick="excluirEmpresaAtual()">🗑️ Excluir</button>
+      </div>
+    </div>
+
+    <!-- PREVIEW DO SITE -->
+    ${e.site ? `
+    <div class="perfil-section">
+      <h3 class="perfil-section-title">🌐 Preview do Site</h3>
+      <div class="perfil-site-preview">
+        <div class="perfil-site-frame">
+          <div class="perfil-site-bar">
+            <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
+            <span class="perfil-site-url">${esc(e.site)}</span>
+          </div>
+          <iframe src="${esc(e.site)}" class="perfil-iframe" sandbox="allow-same-origin allow-scripts" loading="lazy"></iframe>
+        </div>
+        <div class="perfil-site-info">
+          ${s.title ? `<h4>${esc(s.title)}</h4>` : ''}
+          ${s.description ? `<p class="perfil-site-desc">${esc(s.description)}</p>` : ''}
+          ${s.h1 ? `<div class="perfil-site-tag"><strong>H1:</strong> ${esc(s.h1)}</div>` : ''}
+          ${s.h2 ? `<div class="perfil-site-tag"><strong>H2:</strong> ${esc(s.h2.split(' | ').slice(0,5).join(' | '))}</div>` : ''}
+          <a href="${esc(e.site)}" target="_blank" class="btn-ghost-sm" style="margin-top:12px;display:inline-block;text-decoration:none;">Abrir site ↗</a>
+        </div>
+      </div>
+    </div>` : ''}
+
+    <!-- STATS RÁPIDOS -->
+    <div class="perfil-stats-row">
+      <div class="perfil-stat-card"><div class="perfil-stat-num">${totalConteudos}</div><div class="perfil-stat-label">Total criados</div></div>
+      <div class="perfil-stat-card"><div class="perfil-stat-num">${totalPosts}</div><div class="perfil-stat-label">Posts</div></div>
+      <div class="perfil-stat-card"><div class="perfil-stat-num">${totalImgs}</div><div class="perfil-stat-label">Imagens</div></div>
+      <div class="perfil-stat-card"><div class="perfil-stat-num">${totalCal}</div><div class="perfil-stat-label">Calendário</div></div>
+    </div>
+
+    <!-- SOBRE A EMPRESA -->
+    <div class="perfil-section">
+      <h3 class="perfil-section-title">🏢 Sobre a Empresa</h3>
+      <div class="perfil-card-grid">
+        <div class="perfil-card">
+          <div class="perfil-card-icon">🎯</div>
+          <h4>Público-alvo</h4>
+          <p>${esc(e.publico)}</p>
+        </div>
+        <div class="perfil-card">
+          <div class="perfil-card-icon">📝</div>
+          <h4>Descrição</h4>
+          <p>${esc(e.descricao || 'Sem descrição')}</p>
+        </div>
+        ${a.resumoMarca ? `<div class="perfil-card full-width">
+          <div class="perfil-card-icon">💡</div>
+          <h4>Resumo da Marca</h4>
+          <p>${esc(a.resumoMarca)}</p>
+        </div>` : ''}
+      </div>
+    </div>
+
+    <!-- POSICIONAMENTO E TOM -->
+    ${a.posicionamento || a.tomDeVoz ? `
+    <div class="perfil-section">
+      <h3 class="perfil-section-title">🧭 Posicionamento & Voz</h3>
+      <div class="perfil-card-grid">
+        ${a.posicionamento ? `<div class="perfil-card"><div class="perfil-card-icon">🏆</div><h4>Posicionamento</h4><p>${esc(a.posicionamento)}</p></div>` : ''}
+        ${a.tomDeVoz ? `<div class="perfil-card"><div class="perfil-card-icon">🗣️</div><h4>Tom de Voz</h4><p>${esc(a.tomDeVoz)}</p></div>` : ''}
+      </div>
+    </div>` : ''}
+
+    <!-- ANÁLISE SWOT -->
+    ${a.pontosFortes || a.pontosFracos || a.oportunidades ? `
+    <div class="perfil-section">
+      <h3 class="perfil-section-title">📊 Análise Estratégica</h3>
+      <div class="perfil-swot">
+        ${a.pontosFortes ? `<div class="swot-card swot-forca"><h4>💪 Pontos Fortes</h4><ul>${a.pontosFortes.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+        ${a.pontosFracos ? `<div class="swot-card swot-fraqueza"><h4>⚠️ Pontos Fracos</h4><ul>${a.pontosFracos.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+        ${a.oportunidades ? `<div class="swot-card swot-oportunidade"><h4>🚀 Oportunidades</h4><ul>${a.oportunidades.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+      </div>
+    </div>` : ''}
+
+    <!-- PERSONA -->
+    ${a.personaPrincipal ? `
+    <div class="perfil-section">
+      <h3 class="perfil-section-title">👤 Persona Principal</h3>
+      <div class="perfil-persona">
+        <div class="persona-avatar">👤</div>
+        <div class="persona-info">
+          <h4>${esc(a.personaPrincipal.nome)} — ${esc(a.personaPrincipal.idade)}</h4>
+          <div class="persona-grid">
+            <div class="persona-col">
+              <strong>😣 Dores</strong>
+              <ul>${(a.personaPrincipal.dores || []).map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+            </div>
+            <div class="persona-col">
+              <strong>✨ Desejos</strong>
+              <ul>${(a.personaPrincipal.desejos || []).map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>` : ''}
+
+    <!-- AÇÕES IMEDIATAS -->
+    ${a.sugestoesImediatas ? `
+    <div class="perfil-section">
+      <h3 class="perfil-section-title">⚡ Ações Recomendadas</h3>
+      <div class="perfil-acoes">
+        ${a.sugestoesImediatas.map((x, i) => `<div class="acao-item"><span class="acao-num">${i + 1}</span><span>${esc(x)}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+  `;
 }
 
 // ========== MODAL EXPANDIDO ==========
@@ -124,6 +291,26 @@ function fecharModal() {
 
 function modalSalvar() {
   if (!modalAtual) return;
+
+  // Edição de item da galeria
+  if (modalAtual.source === 'galeria-edit') {
+    const idx = (dadosEmpresa().galeria || []).findIndex(x => String(x.id) === String(modalAtual.galeriaId));
+    if (idx >= 0) {
+      dadosEmpresa().galeria[idx].titulo = $('modal-gancho').value;
+      dadosEmpresa().galeria[idx].descricao = $('modal-visual').value;
+      dadosEmpresa().galeria[idx].textoCompleto = $('modal-texto').value;
+      dadosEmpresa().galeria[idx].textoPost = $('modal-texto').value;
+      dadosEmpresa().galeria[idx].cta = $('modal-cta').value;
+      dadosEmpresa().galeria[idx].hashtags = $('modal-hashtags').value;
+      dadosEmpresa().galeria[idx].visual = $('modal-visual').value;
+    }
+    saveState();
+    toast('Item atualizado!');
+    fecharModal();
+    renderGaleria();
+    return;
+  }
+
   const item = modalAtual.item;
   item.gancho = $('modal-gancho').value;
   item.texto = $('modal-texto').value;
@@ -133,14 +320,14 @@ function modalSalvar() {
   item.visual = $('modal-visual').value;
 
   // Atualiza no state
-  if (modalAtual.source === 'conteudo' && state.historico.length) {
-    const h = state.historico.find(x => x.itens);
+  if (modalAtual.source === 'conteudo' && dadosEmpresa().historico.length) {
+    const h = dadosEmpresa().historico.find(x => x.itens);
     if (h && h.itens[modalAtual.index]) {
       h.itens[modalAtual.index] = { ...item };
     }
   }
-  if (modalAtual.source === 'calendario' && state.calendario) {
-    const posts = state.calendario.posts || [];
+  if (modalAtual.source === 'calendario' && dadosEmpresa().calendario) {
+    const posts = dadosEmpresa().calendario.posts || [];
     if (posts[modalAtual.index]) {
       posts[modalAtual.index] = { ...posts[modalAtual.index], ...item };
     }
@@ -170,7 +357,7 @@ async function modalMelhorar() {
     const r = await postJSON('/api/conteudo/melhorar', {
       gancho, texto,
       cta: $('modal-cta').value,
-      empresa: state.empresa,
+      empresa: empresaAtual(),
     });
     hideLoading();
     if (!r.ok) return toast('Erro: ' + r.error);
@@ -193,7 +380,7 @@ async function modalVariacoes() {
     const r = await postJSON('/api/conteudo/variacoes', {
       gancho, texto,
       cta: $('modal-cta').value,
-      empresa: state.empresa,
+      empresa: empresaAtual(),
     });
     hideLoading();
     if (!r.ok) return toast('Erro: ' + r.error);
@@ -234,7 +421,7 @@ async function modalGerarImagem() {
     const r = await postJSON('/api/imagem/gerar', {
       descricao: visual,
       contexto: texto.slice(0, 500),
-      empresa: state.empresa,
+      empresa: empresaAtual(),
       modelo: modeloEscolhido,
     });
     hideLoading();
@@ -294,7 +481,7 @@ async function gerarConteudo() {
   const body = {
     tipo: $('ct-tipo').value, plataforma: $('ct-plataforma').value,
     quantidade: parseInt($('ct-qtd').value) || 3, objetivo: $('ct-objetivo').value,
-    tema, empresa: state.empresa,
+    tema, empresa: empresaAtual(),
   };
   showLoading('Criando conteúdo no tom da sua marca...');
   try {
@@ -303,8 +490,8 @@ async function gerarConteudo() {
     if (!r.ok) return $('ct-resultado').innerHTML = `<div class="error-box">Erro: ${esc(r.error)}</div>`;
     const itens = r.resultado.itens || [];
     renderConteudo('ct-resultado', itens);
-    state.historico.unshift({ id: Date.now(), tipo: body.tipo, tema, plataforma: body.plataforma, itens, criadoEm: new Date().toISOString() });
-    state.historico = state.historico.slice(0, 50);
+    dadosEmpresa().historico.unshift({ id: Date.now(), tipo: body.tipo, tema, plataforma: body.plataforma, itens, criadoEm: new Date().toISOString() });
+    dadosEmpresa().historico = dadosEmpresa().historico.slice(0, 50);
     salvarPostsNaGaleria(itens);
     saveState(); renderHistorico();
     toast(`${itens.length} itens gerados!`);
@@ -335,20 +522,20 @@ async function gerarCalendario() {
     mes: parseInt($('cal-mes').value), ano: parseInt($('cal-ano').value),
     frequencia: $('cal-freq').value,
     plataformas: $('cal-plat').value.split(',').map(s => s.trim()).filter(Boolean),
-    empresa: state.empresa,
+    empresa: empresaAtual(),
   };
   showLoading('Planejando o mês inteiro...');
   try {
     const r = await postJSON('/api/calendario/gerar', body);
     hideLoading();
     if (!r.ok) return $('cal-resultado').innerHTML = `<div class="error-box">Erro: ${esc(r.error)}</div>`;
-    state.calendario = r.resultado; saveState();
+    dadosEmpresa().calendario = r.resultado; saveState();
     renderCalendario(); toast('Calendário pronto!');
   } catch (err) { hideLoading(); $('cal-resultado').innerHTML = `<div class="error-box">Erro: ${esc(err.message)}</div>`; }
 }
 
 function renderCalendario() {
-  const a = state.calendario; if (!a) return;
+  const a = dadosEmpresa().calendario; if (!a) return;
   const posts = a.posts || []; const datas = a.datasComemorativas || [];
   $('cal-resultado').innerHTML = `
     ${datas.length ? `<div class="cal-tags">${datas.map(d => `<span class="tag">${esc(d.data)} — ${esc(d.nome)}</span>`).join('')}</div>` : ''}
@@ -379,15 +566,15 @@ async function analisarConcorrentes() {
   if (!items.length) return toast('Adicione pelo menos um concorrente');
   showLoading('Analisando concorrentes...');
   try {
-    const r = await postJSON('/api/concorrentes/analisar', { concorrentes: items, empresa: state.empresa });
+    const r = await postJSON('/api/concorrentes/analisar', { concorrentes: items, empresa: empresaAtual() });
     hideLoading();
     if (!r.ok) return $('conc-resultado').innerHTML = `<div class="error-box">Erro: ${esc(r.error)}</div>`;
-    state.concorrentes = r.resultado; saveState(); renderConcorrentes(); toast('Análise pronta!');
+    dadosEmpresa().concorrentes = r.resultado; saveState(); renderConcorrentes(); toast('Análise pronta!');
   } catch (err) { hideLoading(); $('conc-resultado').innerHTML = `<div class="error-box">Erro: ${esc(err.message)}</div>`; }
 }
 
 function renderConcorrentes() {
-  const a = state.concorrentes; if (!a) return;
+  const a = dadosEmpresa().concorrentes; if (!a) return;
   $('conc-resultado').innerHTML = `
     ${a.resumoMercado ? `<h4 style="margin-top:14px;color:#f472b6;font-size:13px;">RESUMO DO MERCADO</h4><p style="font-size:13px;color:#d4d4e0;">${esc(a.resumoMercado)}</p>` : ''}
     ${a.tendenciasDetectadas ? `<h4 style="margin-top:14px;color:#f472b6;font-size:13px;">TENDÊNCIAS</h4><ul style="font-size:13px;color:#d4d4e0;padding-left:18px;">${a.tendenciasDetectadas.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>` : ''}
@@ -403,30 +590,30 @@ async function gerarTudoDeUmaVez() {
   showLoading('Gerando pacote completo... (~2 minutos)');
   try {
     const [conteudoRes, calRes] = await Promise.all([
-      postJSON('/api/conteudo/gerar', { tipo: 'post', plataforma: 'Instagram', quantidade: 5, objetivo: 'engajamento', tema: 'Conteúdo variado sobre a marca, serviços e bastidores', empresa: state.empresa }),
-      postJSON('/api/calendario/gerar', { mes: new Date().getMonth() + 1, ano: new Date().getFullYear(), frequencia: '3x por semana', plataformas: ['Instagram', 'Facebook'], empresa: state.empresa }),
+      postJSON('/api/conteudo/gerar', { tipo: 'post', plataforma: 'Instagram', quantidade: 5, objetivo: 'engajamento', tema: 'Conteúdo variado sobre a marca, serviços e bastidores', empresa: empresaAtual() }),
+      postJSON('/api/calendario/gerar', { mes: new Date().getMonth() + 1, ano: new Date().getFullYear(), frequencia: '3x por semana', plataformas: ['Instagram', 'Facebook'], empresa: empresaAtual() }),
     ]);
     hideLoading();
     if (conteudoRes.ok) {
       renderConteudo('ct-resultado', conteudoRes.resultado.itens || []);
-      state.historico.unshift({ id: Date.now(), tipo: 'pacote completo', tema: 'Gerado automaticamente', plataforma: 'Instagram', itens: conteudoRes.resultado.itens, criadoEm: new Date().toISOString() });
+      dadosEmpresa().historico.unshift({ id: Date.now(), tipo: 'pacote completo', tema: 'Gerado automaticamente', plataforma: 'Instagram', itens: conteudoRes.resultado.itens, criadoEm: new Date().toISOString() });
     }
-    if (calRes.ok) { state.calendario = calRes.resultado; renderCalendario(); }
+    if (calRes.ok) { dadosEmpresa().calendario = calRes.resultado; renderCalendario(); }
     saveState(); renderHistorico(); toast('Pacote completo pronto! ✨');
   } catch (err) { hideLoading(); alert('Erro: ' + err.message); }
 }
 
 // ========== HISTÓRICO ==========
 function renderHistorico() {
-  if (!state.historico?.length) { $('historico-card').style.display = 'none'; return; }
+  if (!dadosEmpresa().historico?.length) { $('historico-card').style.display = 'none'; return; }
   $('historico-card').style.display = 'block';
-  $('historico-lista').innerHTML = state.historico.slice(0, 10).map(h => {
+  $('historico-lista').innerHTML = dadosEmpresa().historico.slice(0, 10).map(h => {
     const d = new Date(h.criadoEm);
     return `<div class="historico-item" onclick="reabrirHistorico(${h.id})"><div><strong>${esc(h.tipo)}</strong> · ${esc(h.plataforma)} · ${esc(h.tema)}</div><div class="historico-data">${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR').slice(0,5)}</div></div>`;
   }).join('');
 }
 function reabrirHistorico(id) {
-  const h = state.historico.find(x => x.id === id);
+  const h = dadosEmpresa().historico.find(x => x.id === id);
   if (!h?.itens) return;
   renderConteudo('ct-resultado', h.itens);
   $('ct-resultado').scrollIntoView({ behavior: 'smooth' });
@@ -438,7 +625,7 @@ async function explorarIdeias() {
   if (!tema) return toast('Informe o tema');
   showLoading('Mapeando árvore de ideias...');
   try {
-    const r = await postJSON('/api/ideias/explorar', { tema, empresa: state.empresa });
+    const r = await postJSON('/api/ideias/explorar', { tema, empresa: empresaAtual() });
     hideLoading();
     if (!r.ok) return $('ideia-resultado').innerHTML = `<div class="error-box">Erro: ${esc(r.error)}</div>`;
     const d = r.resultado;
@@ -511,7 +698,7 @@ async function gerarHashtags() {
   if (!tema) return toast('Informe o tema');
   showLoading('Pesquisando hashtags estratégicas...');
   try {
-    const r = await postJSON('/api/hashtags/gerar', { tema, plataforma: $('hash-plat').value, empresa: state.empresa });
+    const r = await postJSON('/api/hashtags/gerar', { tema, plataforma: $('hash-plat').value, empresa: empresaAtual() });
     hideLoading();
     if (!r.ok) return $('hash-resultado').innerHTML = `<div class="error-box">Erro: ${esc(r.error)}</div>`;
     const d = r.resultado;
@@ -536,7 +723,7 @@ async function gerarBriefing() {
   if (!tema) return toast('Informe o tema');
   showLoading('Criando briefing visual...');
   try {
-    const r = await postJSON('/api/briefing/gerar', { tipo: $('brief-tipo').value, tema, plataforma: $('brief-plat').value, empresa: state.empresa });
+    const r = await postJSON('/api/briefing/gerar', { tipo: $('brief-tipo').value, tema, plataforma: $('brief-plat').value, empresa: empresaAtual() });
     hideLoading();
     if (!r.ok) return $('brief-resultado').innerHTML = `<div class="error-box">Erro: ${esc(r.error)}</div>`;
     const d = r.resultado;
@@ -563,7 +750,7 @@ async function reciclarConteudo() {
   if (!texto) return toast('Cole o conteúdo original');
   showLoading('Transformando em 6 formatos...');
   try {
-    const r = await postJSON('/api/reciclar/gerar', { conteudoOriginal: texto, formatoOriginal: $('reciclar-formato').value, empresa: state.empresa });
+    const r = await postJSON('/api/reciclar/gerar', { conteudoOriginal: texto, formatoOriginal: $('reciclar-formato').value, empresa: empresaAtual() });
     hideLoading();
     if (!r.ok) return $('reciclar-resultado').innerHTML = `<div class="error-box">Erro: ${esc(r.error)}</div>`;
     const fmts = r.resultado.formatos || [];
@@ -595,7 +782,7 @@ async function reciclarConteudo() {
 async function gerarBios() {
   showLoading('Criando bios para todas as redes...');
   try {
-    const r = await postJSON('/api/bio/gerar', { empresa: state.empresa });
+    const r = await postJSON('/api/bio/gerar', { empresa: empresaAtual() });
     hideLoading();
     if (!r.ok) return $('bio-resultado').innerHTML = `<div class="error-box">Erro: ${esc(r.error)}</div>`;
     const d = r.resultado;
@@ -626,8 +813,8 @@ async function gerarBios() {
 
 // ========== GALERIA DE PROJETOS ==========
 function toggleView(view) {
-  const views = ['view-modulos', 'view-galeria', 'view-conexoes', 'view-agenda'];
-  const btns = ['btn-modulos', 'btn-galeria', 'btn-conexoes', 'btn-agenda'];
+  const views = ['view-modulos', 'view-galeria', 'view-conexoes', 'view-agenda', 'view-perfil'];
+  const btns = ['btn-modulos', 'btn-galeria', 'btn-conexoes', 'btn-agenda', 'btn-perfil'];
   views.forEach(v => { const el = $(v); if (el) el.style.display = 'none'; });
   btns.forEach(b => { const el = $(b); if (el) el.style.display = ''; });
 
@@ -643,6 +830,10 @@ function toggleView(view) {
     $('view-agenda').style.display = 'block';
     $('btn-agenda').style.display = 'none';
     carregarAgendamentos();
+  } else if (view === 'perfil') {
+    $('view-perfil').style.display = 'block';
+    $('btn-perfil').style.display = 'none';
+    renderPerfilCompleto();
   } else {
     $('view-modulos').style.display = '';
     $('btn-modulos').style.display = 'none';
@@ -650,13 +841,13 @@ function toggleView(view) {
 }
 
 function salvarNaGaleria(item) {
-  if (!state.galeria) state.galeria = [];
-  state.galeria.unshift({
+  if (!dadosEmpresa().galeria) dadosEmpresa().galeria = [];
+  dadosEmpresa().galeria.unshift({
     id: Date.now(),
     ...item,
     criadoEm: new Date().toISOString(),
   });
-  state.galeria = state.galeria.slice(0, 200);
+  dadosEmpresa().galeria = dadosEmpresa().galeria.slice(0, 200);
   saveState();
 }
 
@@ -684,8 +875,8 @@ function filtrarGaleria(filtro) {
 }
 
 function renderGaleria(filtro = 'todos') {
-  const items = state.galeria || [];
-  const cal = state.calendario?.posts || [];
+  const items = dadosEmpresa().galeria || [];
+  const cal = dadosEmpresa().calendario?.posts || [];
 
   // Monta lista unificada
   let todos = [...items];
@@ -698,20 +889,34 @@ function renderGaleria(filtro = 'todos') {
           id: `cal-${idx}`, tipo: 'calendario',
           titulo: p.tema, descricao: p.ideiaCopy,
           data: p.data, plataforma: p.plataforma,
-          criadoEm: state.calendario?.criadoEm || new Date().toISOString(),
+          criadoEm: dadosEmpresa().calendario?.criadoEm || new Date().toISOString(),
         });
       }
     });
   }
 
-  // Filtra
+  // Filtra por tipo
   if (filtro === 'imagens') todos = todos.filter(x => x.tipo === 'imagem');
   else if (filtro === 'posts') todos = todos.filter(x => x.tipo === 'post');
   else if (filtro === 'calendario') todos = todos.filter(x => x.tipo === 'calendario');
 
+  // Filtra por pasta
+  const pastaFiltro = $('filtro-pasta')?.value || 'todas';
+  if (pastaFiltro !== 'todas') {
+    todos = todos.filter(x => (x.pasta || 'Geral') === pastaFiltro);
+  }
+
+  // Atualiza dropdown de pastas
+  const pastaSelect = $('filtro-pasta');
+  if (pastaSelect) {
+    const current = pastaSelect.value;
+    pastaSelect.innerHTML = '<option value="todas">📂 Todas as pastas</option>' +
+      (dadosEmpresa().pastas || []).map(p => `<option value="${esc(p)}" ${p === current ? 'selected' : ''}>${esc(p)}</option>`).join('');
+  }
+
   // Stats
-  const totalImgs = (state.galeria || []).filter(x => x.tipo === 'imagem').length;
-  const totalPosts = (state.galeria || []).filter(x => x.tipo === 'post').length;
+  const totalImgs = (dadosEmpresa().galeria || []).filter(x => x.tipo === 'imagem').length;
+  const totalPosts = (dadosEmpresa().galeria || []).filter(x => x.tipo === 'post').length;
   const totalCal = cal.length;
   $('galeria-stats').innerHTML = `
     <div class="stat-card"><div class="stat-num">${items.length + totalCal}</div><div class="stat-label">Total criados</div></div>
@@ -733,9 +938,17 @@ function renderGaleria(filtro = 'todos') {
     const dataStr = d.toLocaleDateString('pt-BR');
     const icons = { imagem: '🖼️', post: '✏️', calendario: '📅' };
     const colors = { imagem: '#f472b6', post: '#c084fc', calendario: '#4ade80' };
+    const isCal = String(item.id).startsWith('cal-');
+    const sel = selecionados.has(item.id);
+    const pasta = item.pasta && item.pasta !== 'Geral' ? item.pasta : '';
 
     return `
-      <div class="galeria-card" onclick="abrirItemGaleria('${item.id}')">
+      <div class="galeria-card ${sel ? 'selecionado' : ''}" onclick="clickCard('${item.id}', event)" data-id="${item.id}">
+        <div class="card-checkbox" onclick="event.stopPropagation();toggleSelecionado('${item.id}')">${sel ? '✓' : ''}</div>
+        ${!isCal ? `<div class="card-actions">
+          <button class="card-act-btn" onclick="event.stopPropagation();editarItemGaleria('${item.id}')" title="Editar">✏️</button>
+          <button class="card-act-btn act-danger" onclick="event.stopPropagation();excluirItemGaleria('${item.id}')" title="Excluir">🗑️</button>
+        </div>` : ''}
         ${item.imageUrl
           ? `<div class="galeria-card-img"><img src="${esc(item.imageUrl)}" alt="${esc(item.titulo)}" loading="lazy"></div>`
           : `<div class="galeria-card-placeholder">${icons[item.tipo] || '📄'}</div>`}
@@ -743,6 +956,7 @@ function renderGaleria(filtro = 'todos') {
           <h4>${esc(item.titulo)}</h4>
           <p>${esc(item.descricao || '')}</p>
         </div>
+        ${pasta ? `<span class="card-pasta-badge">📂 ${esc(pasta)}</span>` : ''}
         <div class="galeria-card-footer">
           <span class="galeria-card-date">${dataStr}</span>
           <span class="galeria-card-badge" style="background:${colors[item.tipo] || '#c084fc'}22;color:${colors[item.tipo] || '#c084fc'};">
@@ -754,12 +968,12 @@ function renderGaleria(filtro = 'todos') {
 }
 
 function abrirItemGaleria(id) {
-  const item = (state.galeria || []).find(x => String(x.id) === String(id));
+  const item = (dadosEmpresa().galeria || []).find(x => String(x.id) === String(id));
   if (!item) {
     // Pode ser calendario
     if (String(id).startsWith('cal-')) {
       const idx = parseInt(String(id).replace('cal-', ''));
-      const posts = state.calendario?.posts || [];
+      const posts = dadosEmpresa().calendario?.posts || [];
       if (posts[idx]) {
         abrirModal('calendario', idx, posts[idx], 'cal-resultado');
         return;
@@ -797,6 +1011,417 @@ function abrirItemGaleria(id) {
       visual: item.visual || '',
     }, 'ct-resultado');
   }
+}
+
+// ========== GERENCIAMENTO DA GALERIA ==========
+function clickCard(id, event) {
+  if (modoGerenciar) { toggleSelecionado(id); }
+  else { abrirItemGaleria(id); }
+}
+
+function toggleGerenciar() {
+  modoGerenciar = !modoGerenciar;
+  selecionados.clear();
+  $('galeria-grid').classList.toggle('gerenciando', modoGerenciar);
+  $('btn-gerenciar').textContent = modoGerenciar ? '✕ Cancelar' : '☑️ Selecionar';
+  $('galeria-sel-count').classList.toggle('hidden', !modoGerenciar);
+  $('btn-excluir-sel').classList.toggle('hidden', !modoGerenciar);
+  $('btn-mover-sel').classList.toggle('hidden', !modoGerenciar);
+  atualizarContagem();
+  renderGaleria();
+}
+
+function toggleSelecionado(id) {
+  selecionados.has(id) ? selecionados.delete(id) : selecionados.add(id);
+  atualizarContagem();
+  renderGaleria();
+}
+
+function atualizarContagem() {
+  const el = $('galeria-sel-count');
+  if (el) el.textContent = `${selecionados.size} selecionados`;
+}
+
+function excluirItemGaleria(id) {
+  if (!confirm('Tem certeza que deseja excluir este item?')) return;
+  dadosEmpresa().galeria = (dadosEmpresa().galeria || []).filter(x => String(x.id) !== String(id));
+  saveState();
+  renderGaleria();
+  toast('Item excluído!');
+}
+
+function excluirSelecionados() {
+  if (!selecionados.size) return toast('Nenhum item selecionado');
+  if (!confirm(`Excluir ${selecionados.size} itens permanentemente?`)) return;
+  dadosEmpresa().galeria = (dadosEmpresa().galeria || []).filter(x => !selecionados.has(x.id));
+  saveState();
+  selecionados.clear();
+  atualizarContagem();
+  renderGaleria();
+  toast('Itens excluídos!');
+}
+
+function editarItemGaleria(id) {
+  const item = (dadosEmpresa().galeria || []).find(x => String(x.id) === String(id));
+  if (!item) return;
+
+  modalAtual = {
+    source: 'galeria-edit',
+    galeriaId: id,
+    item: { ...item },
+    index: 0,
+    containerId: null,
+  };
+  $('modal-titulo').textContent = '✏️ Editar item';
+  $('modal-gancho').value = item.titulo || '';
+  $('modal-texto').value = item.textoCompleto || item.textoPost || item.descricao || '';
+  $('modal-cta').value = item.cta || '';
+  $('modal-hashtags').value = item.hashtags || '';
+  $('modal-visual').value = item.visual || item.descricao || '';
+  $('modal-variacoes').innerHTML = '';
+  $('modal-imagem').innerHTML = item.imageUrl
+    ? `<div class="img-result"><img src="${esc(item.imageUrl)}" alt="${esc(item.titulo)}" style="max-width:100%;border-radius:12px;"></div>`
+    : '';
+  $('modal').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+
+function moverSelecionados() {
+  if (!selecionados.size) return toast('Nenhum item selecionado');
+  const pastas = dadosEmpresa().pastas || ['Geral'];
+  const pasta = prompt('Mover para qual pasta?\n\nPastas disponíveis:\n• ' + pastas.join('\n• ') + '\n\nDigite o nome (ou um novo para criar):');
+  if (!pasta) return;
+  if (!pastas.includes(pasta)) {
+    dadosEmpresa().pastas.push(pasta);
+  }
+  dadosEmpresa().galeria.forEach(item => {
+    if (selecionados.has(item.id)) item.pasta = pasta;
+  });
+  saveState();
+  selecionados.clear();
+  atualizarContagem();
+  renderGaleria();
+  toast(`${selecionados.size || 'Itens'} movidos para "${pasta}"!`);
+}
+
+function gerenciarPastas() {
+  const pastas = dadosEmpresa().pastas || ['Geral'];
+  const acao = prompt(
+    '📂 Gerenciar Pastas\n\n' +
+    'Pastas atuais: ' + pastas.join(', ') + '\n\n' +
+    'Digite:\n' +
+    '+ Nome  → criar pasta\n' +
+    '- Nome  → excluir pasta\n' +
+    '> Antigo > Novo  → renomear pasta'
+  );
+  if (!acao) return;
+
+  if (acao.startsWith('+')) {
+    const nome = acao.slice(1).trim();
+    if (nome && !pastas.includes(nome)) {
+      dadosEmpresa().pastas.push(nome);
+      toast(`Pasta "${nome}" criada!`);
+    } else if (pastas.includes(nome)) {
+      toast('Pasta já existe!');
+    }
+  } else if (acao.startsWith('-')) {
+    const nome = acao.slice(1).trim();
+    if (nome === 'Geral') return toast('Não pode excluir a pasta padrão');
+    if (!pastas.includes(nome)) return toast('Pasta não encontrada');
+    dadosEmpresa().pastas = pastas.filter(p => p !== nome);
+    dadosEmpresa().galeria.forEach(item => { if (item.pasta === nome) item.pasta = 'Geral'; });
+    toast(`Pasta "${nome}" excluída!`);
+  } else if (acao.includes('>')) {
+    const partes = acao.split('>').map(s => s.trim());
+    if (partes.length >= 2) {
+      const antigo = partes[0], novo = partes[1];
+      const idx = pastas.indexOf(antigo);
+      if (idx >= 0 && novo) {
+        dadosEmpresa().pastas[idx] = novo;
+        dadosEmpresa().galeria.forEach(item => { if (item.pasta === antigo) item.pasta = novo; });
+        toast(`Pasta renomeada para "${novo}"!`);
+      } else {
+        toast('Pasta não encontrada');
+      }
+    }
+  } else {
+    toast('Comando não reconhecido. Use +, - ou >');
+  }
+  saveState();
+  renderGaleria();
+}
+
+// ========== CAMPANHA COMPLETA ==========
+async function gerarCampanha() {
+  const tema = $('camp-tema').value.trim();
+  if (!tema) return toast('Informe o tema da campanha');
+  showLoading('Criando campanha completa...');
+  try {
+    const r = await postJSON('/api/campanha/gerar', {
+      tema, objetivo: $('camp-objetivo').value.trim(),
+      duracao: $('camp-duracao').value.trim(),
+      orcamento: $('camp-orcamento').value.trim(),
+      plataformas: $('camp-plats').value.split(',').map(s => s.trim()).filter(Boolean),
+      empresa: empresaAtual()
+    });
+    hideLoading();
+    if (!r.ok) return $('camp-resultado').innerHTML = `<div class="error-box">Erro: ${esc(r.error)}</div>`;
+    const d = r.resultado;
+    $('camp-resultado').innerHTML = `
+      <div class="campanha-resultado">
+        <div class="camp-hero"><h2>${esc(d.nomeCampanha)}</h2><p>${esc(d.conceito)}</p></div>
+        <div class="camp-info-row">
+          <div class="camp-info"><strong>Público</strong><p>${esc(d.publicoAlvo)}</p></div>
+          <div class="camp-info"><strong>Mensagem-chave</strong><p>${esc(d.mensagemChave)}</p></div>
+          <div class="camp-info"><strong>Hashtags</strong><p>${esc(d.hashtags)}</p></div>
+        </div>
+        ${d.cronograma ? `<h4>📅 Cronograma</h4><div class="camp-timeline">${d.cronograma.map(c => `<div class="timeline-item"><span class="timeline-dia">${esc(c.dia)}</span><span class="timeline-plat">${esc(c.plataforma)} · ${esc(c.formato)}</span><p>${esc(c.acao)}</p></div>`).join('')}</div>` : ''}
+        ${d.pecas ? `<h4>📝 Peças Criativas (${d.pecas.length})</h4>${d.pecas.map(p => `
+          <div class="peca-card">
+            <div class="peca-header"><span class="peca-plat">${esc(p.plataforma)}</span><span class="peca-fmt">${esc(p.formato)} · ${esc(p.dimensoes || '')}</span></div>
+            <h5>${esc(p.titulo)}</h5>
+            <p class="peca-texto">${esc(p.texto)}</p>
+            ${p.cta ? `<div class="peca-cta">${esc(p.cta)}</div>` : ''}
+            ${p.hashtags ? `<div class="peca-hash">${esc(p.hashtags)}</div>` : ''}
+            ${p.direcaoVisual ? `<div class="peca-visual">🎨 ${esc(p.direcaoVisual)}</div>` : ''}
+            <button class="btn-ghost-sm" onclick="navigator.clipboard.writeText(\`${esc(p.texto).replace(/`/g,"'")}\n\n${esc(p.cta || '')}\n${esc(p.hashtags || '')}\`);toast('Copiado!')">📋 Copiar</button>
+          </div>`).join('')}` : ''}
+        ${d.emailMarketing ? `<h4>📧 Email Marketing</h4><div class="peca-card"><strong>Assunto:</strong> ${esc(d.emailMarketing.assunto)}<br><strong>Preheader:</strong> ${esc(d.emailMarketing.preheader || '')}<p style="margin-top:8px;">${esc(d.emailMarketing.corpo)}</p><div class="peca-cta">${esc(d.emailMarketing.cta)}</div></div>` : ''}
+        ${d.kpis ? `<h4>📊 KPIs</h4><ul>${d.kpis.map(k => `<li>${esc(k)}</li>`).join('')}</ul>` : ''}
+        ${d.investimento ? `<h4>💰 Investimento</h4><p>${esc(d.investimento.sugestao)}</p>` : ''}
+      </div>`;
+    toast('Campanha criada!');
+  } catch (err) { hideLoading(); $('camp-resultado').innerHTML = `<div class="error-box">Erro: ${esc(err.message)}</div>`; }
+}
+
+// ========== GOOGLE ADS ==========
+async function gerarGoogleAds() {
+  const produto = $('gads-produto').value.trim();
+  if (!produto) return toast('Informe o produto ou serviço');
+  showLoading('Gerando anúncios Google Ads...');
+  try {
+    const r = await postJSON('/api/googleads/gerar', {
+      produto, objetivo: $('gads-objetivo').value.trim(),
+      quantidade: $('gads-qtd').value, empresa: empresaAtual()
+    });
+    hideLoading();
+    if (!r.ok) return $('gads-resultado').innerHTML = `<div class="error-box">Erro: ${esc(r.error)}</div>`;
+    const d = r.resultado;
+    $('gads-resultado').innerHTML = `
+      ${d.estrategia ? `<div class="camp-info" style="margin-bottom:16px;"><strong>📊 Estratégia</strong><p>${esc(d.estrategia)}</p>${d.orcamentoDiario ? `<p><strong>Orçamento diário sugerido:</strong> ${esc(d.orcamentoDiario)}</p>` : ''}</div>` : ''}
+      ${(d.anuncios || []).map((a, i) => `
+        <div class="peca-card">
+          <div class="peca-header"><span class="peca-plat">Anúncio ${i+1}</span><span class="peca-fmt">${esc(a.tipo)}</span></div>
+          <h5>Títulos</h5>
+          ${a.titulos.map(t => `<div class="ads-titulo">${esc(t)} <span class="char-count">${t.length}/30</span></div>`).join('')}
+          <h5 style="margin-top:12px;">Descrições</h5>
+          ${a.descricoes.map(d => `<div class="ads-desc">${esc(d)} <span class="char-count">${d.length}/90</span></div>`).join('')}
+          ${a.palavrasChave ? `<h5 style="margin-top:12px;">Keywords</h5><div class="hash-tags">${a.palavrasChave.map(k => `<span class="tag">${esc(k)}</span>`).join('')}</div>` : ''}
+          ${a.extensoes?.callouts ? `<h5 style="margin-top:12px;">Callouts</h5><div class="hash-tags">${a.extensoes.callouts.map(c => `<span class="tag">${esc(c)}</span>`).join('')}</div>` : ''}
+          ${a.dica ? `<p class="peca-visual">💡 ${esc(a.dica)}</p>` : ''}
+        </div>`).join('')}`;
+    toast('Anúncios gerados!');
+  } catch (err) { hideLoading(); $('gads-resultado').innerHTML = `<div class="error-box">Erro: ${esc(err.message)}</div>`; }
+}
+
+// ========== EMAIL MARKETING ==========
+async function gerarEmail() {
+  const tema = $('email-tema').value.trim();
+  if (!tema) return toast('Informe o tema do email');
+  showLoading('Criando email marketing...');
+  try {
+    const r = await postJSON('/api/email/gerar', {
+      tema, tipo: $('email-tipo').value, objetivo: $('email-obj').value.trim(),
+      empresa: empresaAtual()
+    });
+    hideLoading();
+    if (!r.ok) return $('email-resultado').innerHTML = `<div class="error-box">Erro: ${esc(r.error)}</div>`;
+    const d = r.resultado;
+    const corpo = d.corpo || {};
+    $('email-resultado').innerHTML = `
+      <div class="email-preview">
+        <div class="email-header-preview">
+          <div class="email-from">${esc(d.remetente?.nome || 'Empresa')} &lt;${esc(d.remetente?.sugestaoEmail || '')}&gt;</div>
+          <div class="email-subject"><strong>Assunto:</strong> ${esc(d.assunto)}</div>
+          <div class="email-preheader">${esc(d.preheader || '')}</div>
+          ${d.assuntosAlternativos ? `<div class="email-alt"><strong>A/B Test:</strong> ${d.assuntosAlternativos.map(a => `"${esc(a)}"`).join(' | ')}</div>` : ''}
+        </div>
+        <div class="email-body-preview">
+          <p>${esc(corpo.saudacao || '')}</p>
+          <p>${esc(corpo.introducao || '')}</p>
+          <p>${esc(corpo.conteudoPrincipal || '')}</p>
+          ${corpo.prova ? `<blockquote>${esc(corpo.prova)}</blockquote>` : ''}
+          ${corpo.cta ? `<div class="email-cta-btn" style="background:${esc(corpo.cta.cor || '#c084fc')}">${esc(corpo.cta.texto)}</div>` : ''}
+          ${corpo.ps ? `<p class="email-ps">${esc(corpo.ps)}</p>` : ''}
+        </div>
+        ${d.designSugerido ? `<div class="camp-info" style="margin-top:16px;"><strong>🎨 Design sugerido</strong><p>Layout: ${esc(d.designSugerido.layout || '')}<br>Header: ${esc(d.designSugerido.header || '')}</p>${d.designSugerido.paleta ? `<div class="paleta-preview">${d.designSugerido.paleta.map(c => `<div class="paleta-cor" style="background:${esc(c)}" onclick="navigator.clipboard.writeText('${esc(c)}');toast('Cor copiada!')"></div>`).join('')}</div>` : ''}</div>` : ''}
+        ${d.melhorHorario ? `<p style="margin-top:12px;font-size:12px;color:#8a8aa0;">⏰ Melhor horário: ${esc(d.melhorHorario)}</p>` : ''}
+      </div>`;
+    toast('Email criado!');
+  } catch (err) { hideLoading(); $('email-resultado').innerHTML = `<div class="error-box">Erro: ${esc(err.message)}</div>`; }
+}
+
+// ========== YOUTUBE THUMBNAIL ==========
+async function gerarThumbnail() {
+  const titulo = $('thumb-titulo').value.trim();
+  if (!titulo) return toast('Informe o título do vídeo');
+  showLoading('Criando briefing de thumbnail...');
+  try {
+    const r = await postJSON('/api/thumbnail/gerar', {
+      tituloVideo: titulo, estilo: $('thumb-estilo').value.trim(),
+      empresa: empresaAtual()
+    });
+    hideLoading();
+    if (!r.ok) return $('thumb-resultado').innerHTML = `<div class="error-box">Erro: ${esc(r.error)}</div>`;
+    const d = r.resultado;
+    $('thumb-resultado').innerHTML = `
+      <div class="brief-grid">
+        <div class="brief-item" style="grid-column:1/-1;"><h4>🎯 Conceito</h4><p>${esc(d.conceito)}</p></div>
+        <div class="brief-item"><h4>📝 Texto overlay</h4><p style="font-size:20px;font-weight:800;">${esc(d.elementos?.textoOverlay || '')}</p><p style="font-size:11px;color:#8a8aa0;">${esc(d.elementos?.fonteEstilo || '')}</p></div>
+        <div class="brief-item"><h4>🎨 Cor dominante</h4><div style="width:60px;height:60px;border-radius:12px;background:${esc(d.elementos?.corDominante || '#c084fc')};margin:8px 0;"></div><p>${esc(d.elementos?.corDominante || '')}</p></div>
+        ${d.paleta ? `<div class="brief-item"><h4>🎨 Paleta</h4><div class="paleta-preview">${d.paleta.map(c => `<div class="paleta-cor" style="background:${esc(c)}" onclick="navigator.clipboard.writeText('${esc(c)}');toast('Cor copiada!')"></div>`).join('')}</div></div>` : ''}
+        <div class="brief-item"><h4>📐 Composição</h4><p>${esc(d.composicao || '')}</p></div>
+        ${d.elementos?.fundoDescricao ? `<div class="brief-item"><h4>🖼️ Fundo</h4><p>${esc(d.elementos.fundoDescricao)}</p></div>` : ''}
+        ${d.elementos?.elementosGraficos ? `<div class="brief-item"><h4>✨ Elementos gráficos</h4><ul style="font-size:13px;padding-left:16px;">${d.elementos.elementosGraficos.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}
+        ${d.referenciasEstilo ? `<div class="brief-item" style="grid-column:1/-1;"><h4>🖼️ Referências</h4><p>${esc(d.referenciasEstilo)}</p></div>` : ''}
+        ${d.naoFazer ? `<div class="brief-item" style="grid-column:1/-1;"><h4>🚫 Não fazer</h4><ul style="font-size:13px;padding-left:16px;color:#f87171;">${d.naoFazer.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}
+      </div>
+      ${d.promptImagem ? `<div style="margin-top:16px;"><button class="btn-primary" onclick="gerarImagemThumb()">🎨 Gerar imagem da thumbnail</button><input type="hidden" id="thumb-prompt" value="${esc(d.promptImagem)}"></div>` : ''}`;
+    toast('Briefing de thumbnail pronto!');
+  } catch (err) { hideLoading(); $('thumb-resultado').innerHTML = `<div class="error-box">Erro: ${esc(err.message)}</div>`; }
+}
+
+async function gerarImagemThumb() {
+  const prompt = $('thumb-prompt')?.value;
+  if (!prompt) return;
+  showLoading('Gerando imagem da thumbnail...');
+  try {
+    const r = await postJSON('/api/imagem/gerar', { descricao: prompt, empresa: empresaAtual() });
+    hideLoading();
+    if (r.imageUrl) {
+      $('thumb-resultado').innerHTML += `<div class="img-result" style="margin-top:16px;"><img src="${esc(r.imageUrl)}" style="max-width:100%;border-radius:12px;"><div class="img-actions" style="margin-top:8px;"><a href="${esc(r.imageUrl)}" download="thumbnail.png" class="btn-secondary" style="text-decoration:none;">⬇ Baixar</a></div></div>`;
+      salvarNaGaleria({ tipo: 'imagem', titulo: 'YouTube Thumbnail', descricao: prompt, imageUrl: r.imageUrl, modelo: r.modelo });
+      saveState();
+      toast('Thumbnail gerada!');
+    }
+  } catch (err) { hideLoading(); toast('Erro ao gerar imagem: ' + err.message); }
+}
+
+// ========== PHOTOSHOOT IA ==========
+async function gerarPhotoshoot() {
+  const desc = $('photo-desc').value.trim();
+  if (!desc) return toast('Descreva o produto');
+  showLoading('Criando foto profissional...');
+  try {
+    const r = await postJSON('/api/photoshoot/gerar', {
+      descricaoProduto: desc, estilo: $('photo-estilo').value,
+      cenario: $('photo-cenario').value.trim(), empresa: empresaAtual()
+    });
+    hideLoading();
+    if (!r.ok) return $('photo-resultado').innerHTML = `<div class="error-box">Erro: ${esc(r.error)}</div>`;
+    $('photo-resultado').innerHTML = `
+      <div class="img-result">
+        <img src="${esc(r.imageUrl)}" style="max-width:100%;border-radius:12px;">
+        <div class="img-modelo">Gerada com ${esc(r.modelo || 'Gemini')}</div>
+        <div class="img-actions">
+          <a href="${esc(r.imageUrl)}" download="photoshoot.png" class="btn-secondary" style="text-decoration:none;">⬇ Baixar</a>
+          <button class="btn-ai" onclick="gerarPhotoshoot()">🔄 Gerar outra</button>
+        </div>
+      </div>`;
+    salvarNaGaleria({ tipo: 'imagem', titulo: 'Photoshoot: ' + desc, descricao: $('photo-estilo').value, imageUrl: r.imageUrl, modelo: r.modelo });
+    saveState();
+    toast('Foto profissional gerada!');
+  } catch (err) { hideLoading(); $('photo-resultado').innerHTML = `<div class="error-box">Erro: ${esc(err.message)}</div>`; }
+}
+
+// ========== EDITOR INTELIGENTE (LINGUAGEM NATURAL) ==========
+async function editarNatural() {
+  const original = $('edit-original').value.trim();
+  const instrucao = $('edit-instrucao').value.trim();
+  if (!original) return toast('Cole o texto original');
+  if (!instrucao) return toast('Diga o que quer mudar');
+  showLoading('Aplicando edição...');
+  try {
+    const r = await postJSON('/api/editar/natural', {
+      conteudoOriginal: original, instrucao, empresa: empresaAtual()
+    });
+    hideLoading();
+    if (!r.ok) return $('edit-resultado').innerHTML = `<div class="error-box">Erro: ${esc(r.error)}</div>`;
+    const d = r.resultado;
+    $('edit-resultado').innerHTML = `
+      <div class="peca-card">
+        <h5>Texto editado</h5>
+        <p class="peca-texto">${esc(d.textoEditado)}</p>
+        ${d.mudancas ? `<h5 style="margin-top:12px;">Mudanças aplicadas</h5><ul style="font-size:12px;color:#8a8aa0;padding-left:16px;">${d.mudancas.map(m => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}
+        ${d.dicaExtra ? `<p class="peca-visual">💡 ${esc(d.dicaExtra)}</p>` : ''}
+        <div style="margin-top:12px;display:flex;gap:8px;">
+          <button class="btn-ghost-sm" onclick="navigator.clipboard.writeText(\`${esc(d.textoEditado).replace(/`/g,"'")}\`);toast('Copiado!')">📋 Copiar</button>
+          <button class="btn-ghost-sm" onclick="$('edit-original').value=\`${esc(d.textoEditado).replace(/`/g,"'")}\`;toast('Texto atualizado para nova edição')">🔄 Editar mais</button>
+        </div>
+      </div>`;
+    toast('Edição aplicada!');
+  } catch (err) { hideLoading(); $('edit-resultado').innerHTML = `<div class="error-box">Erro: ${esc(err.message)}</div>`; }
+}
+
+// ========== IDEIAS POR NICHO ==========
+async function gerarIdeiasNicho() {
+  const nicho = $('nicho-tema').value.trim();
+  if (!nicho) return toast('Informe o nicho');
+  showLoading('Gerando ideias...');
+  try {
+    const r = await postJSON('/api/ideias/nicho', {
+      nicho, objetivo: $('nicho-obj').value.trim(),
+      quantidade: $('nicho-qtd').value, empresa: empresaAtual()
+    });
+    hideLoading();
+    if (!r.ok) return $('nicho-resultado').innerHTML = `<div class="error-box">Erro: ${esc(r.error)}</div>`;
+    const d = r.resultado;
+    $('nicho-resultado').innerHTML = `
+      ${d.tendencias ? `<div class="camp-info" style="margin-bottom:16px;"><strong>📈 Tendências do nicho</strong><div class="hash-tags">${d.tendencias.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div></div>` : ''}
+      <div class="ideias-grid">${(d.ideias || []).map((idea, i) => `
+        <div class="ideia-card">
+          <div class="ideia-num">${i + 1}</div>
+          <div class="ideia-body">
+            <h5>${esc(idea.titulo)}</h5>
+            <p>${esc(idea.descricao)}</p>
+            <div class="ideia-tags">
+              <span class="tag">${esc(idea.formato)}</span>
+              <span class="tag">${esc(idea.plataforma)}</span>
+              <span class="tag ${idea.potencialViral === 'alto' ? 'tag-hot' : ''}">${idea.potencialViral === 'alto' ? '🔥' : ''} ${esc(idea.dificuldade)}</span>
+            </div>
+            ${idea.gancho ? `<p class="ideia-gancho">"${esc(idea.gancho)}"</p>` : ''}
+          </div>
+        </div>`).join('')}</div>
+      ${d.dicaExtra ? `<div class="camp-info" style="margin-top:16px;"><strong>💡 Dica</strong><p>${esc(d.dicaExtra)}</p></div>` : ''}`;
+    toast('Ideias geradas!');
+  } catch (err) { hideLoading(); $('nicho-resultado').innerHTML = `<div class="error-box">Erro: ${esc(err.message)}</div>`; }
+}
+
+// ========== BUSINESS DNA ==========
+async function gerarDNA() {
+  const site = $('dna-site').value.trim() || empresaAtual()?.site;
+  if (!site) return toast('Informe a URL do site');
+  showLoading('Analisando DNA da marca...');
+  try {
+    const r = await postJSON('/api/empresa/dna', { site, empresa: empresaAtual() });
+    hideLoading();
+    if (!r.ok) return $('dna-resultado').innerHTML = `<div class="error-box">Erro: ${esc(r.error)}</div>`;
+    const d = r.dna;
+    $('dna-resultado').innerHTML = `
+      <div class="dna-resultado">
+        ${d.paleta ? `<div class="dna-section"><h4>🎨 Paleta de Cores</h4><div class="dna-paleta">
+          ${Object.entries(d.paleta).map(([k,v]) => `<div class="dna-cor"><div class="dna-cor-box" style="background:${esc(v)}" onclick="navigator.clipboard.writeText('${esc(v)}');toast('Copiado!')"></div><span>${esc(k)}</span><span class="dna-hex">${esc(v)}</span></div>`).join('')}
+        </div></div>` : ''}
+        ${d.tipografia ? `<div class="dna-section"><h4>🔤 Tipografia</h4><p><strong>Títulos:</strong> ${esc(d.tipografia.titulos)}<br><strong>Corpo:</strong> ${esc(d.tipografia.corpo)}<br><strong>Estilo:</strong> ${esc(d.tipografia.estilo)}</p></div>` : ''}
+        ${d.estiloVisual ? `<div class="dna-section"><h4>🎭 Estilo Visual</h4><p>${esc(d.estiloVisual)}</p></div>` : ''}
+        ${d.mood ? `<div class="dna-section"><h4>✨ Mood</h4><p>${esc(d.mood)}</p></div>` : ''}
+        ${d.personalidade ? `<div class="dna-section"><h4>🧬 Personalidade da Marca</h4><div class="hash-tags">${d.personalidade.map(p => `<span class="tag">${esc(p)}</span>`).join('')}</div></div>` : ''}
+        ${d.tomComunicacao ? `<div class="dna-section"><h4>🗣️ Tom de Comunicação</h4><p>${esc(d.tomComunicacao)}</p></div>` : ''}
+        ${d.diferenciais ? `<div class="dna-section"><h4>💎 Diferenciais</h4><ul>${d.diferenciais.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+        ${d.publicoPercebido ? `<div class="dna-section"><h4>👥 Público Percebido</h4><p>${esc(d.publicoPercebido)}</p></div>` : ''}
+      </div>`;
+    toast('DNA da marca extraído!');
+  } catch (err) { hideLoading(); $('dna-resultado').innerHTML = `<div class="error-box">Erro: ${esc(err.message)}</div>`; }
 }
 
 // ========== CONEXÕES ==========
@@ -1056,8 +1681,75 @@ async function cancelarAgendamento(id) {
   } catch (e) { toast('Erro: ' + e.message); }
 }
 
-// ========== RESET ==========
+// ========== GERENCIAMENTO DE EMPRESAS ==========
+function renderEmpresaSelector() {
+  const sel = $('empresa-selector');
+  if (!sel) return;
+  sel.innerHTML = state.empresas.map(e =>
+    `<option value="${e.id}" ${e.id === state.empresaAtualId ? 'selected' : ''}>${esc(e.nome)}</option>`
+  ).join('') + '<option value="__nova__">＋ Nova empresa...</option>';
+}
+
+function trocarEmpresa(id) {
+  if (id === '__nova__') {
+    adicionarEmpresa();
+    return;
+  }
+  state.empresaAtualId = id;
+  saveState();
+  selecionados.clear();
+  modoGerenciar = false;
+  showDashboard();
+  toggleView('galeria');
+  toast(`Empresa: ${empresaAtual()?.nome}`);
+}
+
+function adicionarEmpresa() {
+  // Limpa o wizard e mostra para criar nova empresa
+  $('w-nome').value = ''; $('w-site').value = ''; $('w-segmento').value = '';
+  $('w-publico').value = ''; $('w-redes').value = ''; $('w-local').value = '';
+  $('w-descricao').value = ''; $('w-concorrentes').value = '';
+  document.querySelectorAll('.loading-step').forEach(el => { el.classList.remove('active','done'); });
+  goToStep(1);
+  showWizard();
+}
+
+function editarEmpresaAtual() {
+  const emp = empresaAtual();
+  if (!emp) return;
+  const novoNome = prompt('Nome da empresa:', emp.nome);
+  if (novoNome === null) return;
+  if (novoNome.trim()) emp.nome = novoNome.trim();
+  const novoSegmento = prompt('Segmento:', emp.segmento);
+  if (novoSegmento !== null && novoSegmento.trim()) emp.segmento = novoSegmento.trim();
+  const novoPub = prompt('Público-alvo:', emp.publico);
+  if (novoPub !== null && novoPub.trim()) emp.publico = novoPub.trim();
+  saveState();
+  showDashboard();
+  toast('Empresa atualizada!');
+}
+
+function excluirEmpresaAtual() {
+  if (state.empresas.length <= 1) return toast('Não pode excluir a única empresa');
+  const emp = empresaAtual();
+  if (!confirm(`Excluir "${emp?.nome}" e todos os dados? Isso não pode ser desfeito.`)) return;
+  const id = state.empresaAtualId;
+  state.empresas = state.empresas.filter(e => e.id !== id);
+  delete state.dados[id];
+  state.empresaAtualId = state.empresas[0]?.id || null;
+  saveState();
+  if (state.empresaAtualId) {
+    showDashboard();
+    toast('Empresa excluída');
+  } else {
+    showWizard();
+  }
+}
+
 function resetTudo() {
-  if (!confirm('Isso apaga TUDO (empresa, conteúdos, calendário). Tem certeza?')) return;
-  localStorage.removeItem(STORAGE_KEY); state = loadState(); location.reload();
+  if (!confirm('Isso apaga TUDO (todas as empresas e conteúdos). Tem certeza?')) return;
+  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem('marketing_ai_studio_v2');
+  state = loadState();
+  location.reload();
 }
