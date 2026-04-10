@@ -25,8 +25,9 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // ====== Armazenamento simples em JSON (sem banco de dados) ======
-const DATA_DIR = path.join(__dirname, '..', 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+const isVercel = !!process.env.VERCEL;
+const DATA_DIR = isVercel ? '/tmp' : path.join(__dirname, '..', 'data');
+if (!isVercel && !fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const DB_FILE = path.join(DATA_DIR, 'db.json');
 
 function loadDB() {
@@ -1144,8 +1145,8 @@ app.post('/api/agendar/cancelar', (req, res) => {
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
-// ====== CRON: Verificar agendamentos a cada minuto ======
-cron.schedule('* * * * *', async () => {
+// ====== CRON: Verificar agendamentos a cada minuto (apenas local) ======
+if (!isVercel) cron.schedule('* * * * *', async () => {
   const db = loadDB();
   const agora = new Date();
   let mudou = false;
@@ -1214,10 +1215,16 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, model: MODEL, configurado: !!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_API_KEY.startsWith('sk-ant-xxxx') });
 });
 
-app.listen(PORT, () => {
-  console.log(`\nMarketing AI Studio rodando em http://localhost:${PORT}`);
-  console.log(`Modelo: ${MODEL}`);
-  if (!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY.startsWith('sk-ant-xxxx')) {
-    console.log('\nAVISO: ANTHROPIC_API_KEY nao configurada. Edite o arquivo .env.\n');
-  }
-});
+// Exporta para Vercel Serverless
+module.exports = app;
+
+// Inicia servidor apenas em desenvolvimento local
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`\nMarketing AI Studio rodando em http://localhost:${PORT}`);
+    console.log(`Modelo: ${MODEL}`);
+    if (!process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY.startsWith('sk-ant-xxxx')) {
+      console.log('\nAVISO: ANTHROPIC_API_KEY nao configurada. Edite o arquivo .env.\n');
+    }
+  });
+}
