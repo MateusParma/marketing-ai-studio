@@ -131,6 +131,7 @@ function renderPerfilCompleto() {
   const a = e.analise || {};
   const s = e.scraped || {};
   const d = dadosEmpresa();
+  const siteUrl = e.site && !e.site.startsWith('http') ? 'https://' + e.site : e.site;
   const totalConteudos = (d.galeria || []).length;
   const totalImgs = (d.galeria || []).filter(x => x.tipo === 'imagem').length;
   const totalPosts = (d.galeria || []).filter(x => x.tipo === 'post').length;
@@ -147,7 +148,7 @@ function renderPerfilCompleto() {
           <p class="perfil-segmento">${esc(e.segmento)}</p>
           <div class="perfil-meta">
             ${e.localizacao ? `<span>📍 ${esc(e.localizacao)}</span>` : ''}
-            ${e.site ? `<span>🌐 <a href="${esc(e.site)}" target="_blank" style="color:#c084fc;">${esc(e.site.replace(/^https?:\/\//, ''))}</a></span>` : ''}
+            ${siteUrl ? `<span>🌐 <a href="${esc(siteUrl)}" target="_blank" style="color:#c084fc;">${esc(e.site.replace(/^https?:\/\//, ''))}</a></span>` : ''}
             ${e.redesSociais ? `<span>📱 ${esc(e.redesSociais)}</span>` : ''}
             <span>📅 Desde ${criadoEm}</span>
           </div>
@@ -161,7 +162,7 @@ function renderPerfilCompleto() {
     </div>
 
     <!-- PREVIEW DO SITE -->
-    ${e.site ? `
+    ${siteUrl ? `
     <div class="perfil-section">
       <h3 class="perfil-section-title">🌐 Preview do Site</h3>
       <div class="perfil-site-preview">
@@ -170,14 +171,14 @@ function renderPerfilCompleto() {
             <span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span>
             <span class="perfil-site-url">${esc(e.site)}</span>
           </div>
-          <iframe src="${esc(e.site)}" class="perfil-iframe" sandbox="allow-same-origin allow-scripts" loading="lazy"></iframe>
+          <iframe src="${esc(siteUrl)}" class="perfil-iframe" sandbox="allow-same-origin allow-scripts" loading="lazy"></iframe>
         </div>
         <div class="perfil-site-info">
           ${s.title ? `<h4>${esc(s.title)}</h4>` : ''}
           ${s.description ? `<p class="perfil-site-desc">${esc(s.description)}</p>` : ''}
           ${s.h1 ? `<div class="perfil-site-tag"><strong>H1:</strong> ${esc(s.h1)}</div>` : ''}
           ${s.h2 ? `<div class="perfil-site-tag"><strong>H2:</strong> ${esc(s.h2.split(' | ').slice(0,5).join(' | '))}</div>` : ''}
-          <a href="${esc(e.site)}" target="_blank" class="btn-ghost-sm" style="margin-top:12px;display:inline-block;text-decoration:none;">Abrir site ↗</a>
+          <a href="${esc(siteUrl)}" target="_blank" class="btn-ghost-sm" style="margin-top:12px;display:inline-block;text-decoration:none;">Abrir site ↗</a>
         </div>
       </div>
     </div>` : ''}
