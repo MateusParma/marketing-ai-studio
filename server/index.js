@@ -404,7 +404,7 @@ Responda APENAS com o JSON.`;
     // Helper: gerar com Gemini (NanoBanana)
     async function tentarGemini() {
       if (!geminiKey) return null;
-      const models = ['gemini-2.0-flash-preview-image-generation', 'gemini-2.0-flash-exp'];
+      const models = ['gemini-2.5-flash-image', 'gemini-3.1-flash-image-preview', 'gemini-3-pro-image-preview'];
       for (const model of models) {
         try {
           console.log(`[IMG] Tentando ${model}...`);
@@ -1339,7 +1339,7 @@ Responda APENAS com o JSON.`;
     // 2. Gerar imagens para cada slide
     const geminiKey = process.env.GEMINI_API_KEY;
     if (geminiKey) {
-      const models = ['gemini-2.0-flash-preview-image-generation', 'gemini-2.0-flash-exp'];
+      const models = ['gemini-2.5-flash-image', 'gemini-3.1-flash-image-preview', 'gemini-3-pro-image-preview'];
       for (let i = 0; i < resultado.slides.length; i++) {
         const slide = resultado.slides[i];
         const fullPrompt = `${slide.promptImagem}. Text overlay on image: "${slide.textoImagem}"${slide.subtexto ? `. Subtext: "${slide.subtexto}"` : ''}. Make the text readable, large and bold. Instagram carousel slide ${slide.numero} of ${resultado.slides.length}. 1080x1350 portrait.`;
@@ -1577,7 +1577,7 @@ app.post('/api/photoshoot/gerar', async (req, res) => {
       return res.json({ ok: false, error: 'GEMINI_API_KEY nao configurada. Necessaria para Photoshoot IA.' });
     }
 
-    const models = ['gemini-2.0-flash-preview-image-generation', 'gemini-2.0-flash-exp'];
+    const models = ['gemini-2.5-flash-image', 'gemini-3.1-flash-image-preview', 'gemini-3-pro-image-preview'];
     for (const model of models) {
       try {
         const r = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
