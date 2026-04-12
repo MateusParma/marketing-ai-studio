@@ -1287,6 +1287,89 @@ app.post('/api/publicar/multi', async (req, res) => {
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
+// ====== ROTA: Carrossel completo com imagens ======
+app.post('/api/carrossel/gerar', async (req, res) => {
+  try {
+    const { tema, numSlides, plataforma, estilo, empresa } = req.body;
+    const emp = empresa || loadDB().empresa;
+    const ctx = buildEmpresaContext(emp);
+    const slides = numSlides || 5;
+
+    // 1. Gerar textos e prompts de imagem para cada slide
+    const system = `Voce e um social media e designer senior especializado em carrosseis virais para Instagram e redes sociais. Crie carrosseis com ganchos fortes, conteudo educativo ou persuasivo, e artes visuais impactantes. Portugues brasileiro.`;
+    const user = `${ctx}
+
+Crie um carrossel completo com ${slides} slides sobre: "${tema}"
+Plataforma: ${plataforma || 'Instagram'}
+Estilo visual: ${estilo || 'moderno e profissional'}
+
+Para CADA slide entregue:
+1. O texto que aparece NA IMAGEM (titulo grande, subtexto curto — max 20 palavras por slide)
+2. Um prompt em INGLES para gerar a arte do slide com IA (descreva fundo, cores, layout, elementos visuais)
+
+Regras do carrossel:
+- Slide 1: CAPA com gancho forte que faz parar de rolar
+- Slides 2-${slides-1}: Conteudo com dicas, passos ou informacoes (1 ideia por slide, texto curto e direto)
+- Slide ${slides}: CTA final (salva, compartilha, comenta, link na bio)
+- Todos os slides devem ter unidade visual (mesma paleta, estilo)
+
+Entregue em JSON valido:
+{
+  "titulo": "titulo do carrossel",
+  "legenda": "legenda completa para a publicacao com hashtags",
+  "estiloVisual": "descricao do estilo visual unificado",
+  "paleta": ["#hex1", "#hex2", "#hex3"],
+  "slides": [
+    {
+      "numero": 1,
+      "tipo": "capa | conteudo | cta",
+      "textoImagem": "texto que aparece na imagem (curto e impactante)",
+      "subtexto": "subtexto opcional menor",
+      "promptImagem": "prompt em ingles detalhado para gerar a arte: descreva background, cores, layout, elementos graficos, tipografia. Estilo: ${estilo || 'modern, clean'}. Dimensoes: 1080x1350. Inclua espaco para texto overlay."
+    }
+  ]
+}
+Responda APENAS com o JSON.`;
+
+    const raw = await askClaude(system, user, 3500);
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    const resultado = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+    if (!resultado) return res.json({ ok: false, error: 'Erro ao gerar carrossel' });
+
+    // 2. Gerar imagens para cada slide
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (geminiKey) {
+      const models = ['gemini-2.0-flash-preview-image-generation', 'gemini-2.0-flash-exp'];
+      for (let i = 0; i < resultado.slides.length; i++) {
+        const slide = resultado.slides[i];
+        const fullPrompt = `${slide.promptImagem}. Text overlay on image: "${slide.textoImagem}"${slide.subtexto ? `. Subtext: "${slide.subtexto}"` : ''}. Make the text readable, large and bold. Instagram carousel slide ${slide.numero} of ${resultado.slides.length}. 1080x1350 portrait.`;
+
+        let generated = false;
+        for (const model of models) {
+          if (generated) break;
+          try {
+            const r = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ contents: [{ parts: [{ text: fullPrompt }] }], generationConfig: { responseModalities: ['IMAGE', 'TEXT'] } }),
+            }, 30000);
+            const d = await r.json();
+            if (d.error) continue;
+            const imgPart = (d.candidates?.[0]?.content?.parts || []).find(p => p.inlineData?.mimeType?.startsWith('image/'));
+            if (imgPart) {
+              slide.imageUrl = `data:${imgPart.inlineData.mimeType};base64,${imgPart.inlineData.data}`;
+              slide.modelo = model;
+              generated = true;
+            }
+          } catch (e) { console.log(`[CARROSSEL] Slide ${i+1} ${model} falhou: ${e.message}`); }
+        }
+        if (!generated) slide.imageUrl = null;
+      }
+    }
+
+    res.json({ ok: true, resultado });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
 // ====== ROTA: Campanha Completa de Marketing ======
 app.post('/api/campanha/gerar', async (req, res) => {
   try {

@@ -1152,6 +1152,112 @@ function gerenciarPastas() {
   renderGaleria();
 }
 
+// ========== CARROSSEL COMPLETO ==========
+async function gerarCarrossel() {
+  const tema = $('carr-tema').value.trim();
+  if (!tema) return toast('Informe o tema do carrossel');
+  showLoading('Gerando carrossel completo com imagens... (pode levar 1-2 min)');
+  try {
+    const r = await postJSON('/api/carrossel/gerar', {
+      tema, numSlides: parseInt($('carr-slides').value),
+      estilo: $('carr-estilo').value, empresa: empresaAtual()
+    });
+    hideLoading();
+    if (!r.ok) return $('carr-resultado').innerHTML = `<div class="error-box">Erro: ${esc(r.error)}</div>`;
+    const d = r.resultado;
+    const slides = d.slides || [];
+
+    $('carr-resultado').innerHTML = `
+      <div class="carr-container">
+        <div class="carr-header">
+          <h3>${esc(d.titulo)}</h3>
+          ${d.paleta ? `<div class="paleta-preview">${d.paleta.map(c => `<div class="paleta-cor" style="background:${esc(c)}" onclick="navigator.clipboard.writeText('${esc(c)}');toast('Cor copiada!')"></div>`).join('')}</div>` : ''}
+        </div>
+
+        <div class="carr-viewer">
+          <button class="carr-nav carr-prev" onclick="navCarrossel(-1)">‹</button>
+          <div class="carr-slide-display" id="carr-display">
+            ${slides[0]?.imageUrl
+              ? `<img src="${esc(slides[0].imageUrl)}" class="carr-img">`
+              : `<div class="carr-placeholder"><span class="carr-placeholder-txt">${esc(slides[0]?.textoImagem || '')}</span><span class="carr-placeholder-sub">${esc(slides[0]?.subtexto || '')}</span></div>`}
+          </div>
+          <button class="carr-nav carr-next" onclick="navCarrossel(1)">›</button>
+        </div>
+        <div class="carr-counter" id="carr-counter">1 / ${slides.length}</div>
+
+        <div class="carr-thumbs" id="carr-thumbs">
+          ${slides.map((s, i) => `
+            <div class="carr-thumb ${i === 0 ? 'active' : ''}" onclick="irParaSlide(${i})">
+              ${s.imageUrl
+                ? `<img src="${esc(s.imageUrl)}" alt="Slide ${i+1}">`
+                : `<div class="carr-thumb-empty">${i+1}</div>`}
+            </div>`).join('')}
+        </div>
+
+        <div class="carr-slides-detail">
+          ${slides.map((s, i) => `
+            <div class="carr-slide-info">
+              <div class="carr-slide-num">${i+1}</div>
+              <div class="carr-slide-content">
+                <span class="tag">${esc(s.tipo)}</span>
+                <h5>${esc(s.textoImagem)}</h5>
+                ${s.subtexto ? `<p>${esc(s.subtexto)}</p>` : ''}
+                ${s.imageUrl ? `<a href="${esc(s.imageUrl)}" download="slide-${i+1}.png" class="btn-ghost-sm" style="text-decoration:none;margin-top:8px;display:inline-block;">⬇ Baixar slide ${i+1}</a>` : `<p style="color:#f87171;font-size:11px;">Imagem não gerada</p>`}
+              </div>
+            </div>`).join('')}
+        </div>
+
+        ${d.legenda ? `<div class="carr-legenda"><h4>📝 Legenda</h4><p>${esc(d.legenda)}</p><button class="btn-ghost-sm" onclick="navigator.clipboard.writeText(\`${esc(d.legenda).replace(/`/g,"'")}\`);toast('Legenda copiada!')">📋 Copiar legenda</button></div>` : ''}
+
+        <button class="btn-ghost-sm" onclick="baixarTodosSlides()" style="margin-top:12px;">⬇ Baixar todos os slides</button>
+      </div>`;
+
+    // Salvar referência dos slides para navegação
+    window._carrSlides = slides;
+    window._carrIdx = 0;
+
+    // Salvar na galeria
+    slides.forEach((s, i) => {
+      if (s.imageUrl) {
+        salvarNaGaleria({ tipo: 'imagem', titulo: `${d.titulo} - Slide ${i+1}`, descricao: s.textoImagem, imageUrl: s.imageUrl, modelo: s.modelo || 'Gemini' });
+      }
+    });
+    saveState();
+    toast(`Carrossel com ${slides.length} slides gerado!`);
+  } catch (err) { hideLoading(); $('carr-resultado').innerHTML = `<div class="error-box">Erro: ${esc(err.message)}</div>`; }
+}
+
+function navCarrossel(dir) {
+  const slides = window._carrSlides || [];
+  if (!slides.length) return;
+  window._carrIdx = (window._carrIdx + dir + slides.length) % slides.length;
+  irParaSlide(window._carrIdx);
+}
+
+function irParaSlide(idx) {
+  const slides = window._carrSlides || [];
+  if (!slides[idx]) return;
+  window._carrIdx = idx;
+  const s = slides[idx];
+  $('carr-display').innerHTML = s.imageUrl
+    ? `<img src="${esc(s.imageUrl)}" class="carr-img">`
+    : `<div class="carr-placeholder"><span class="carr-placeholder-txt">${esc(s.textoImagem || '')}</span><span class="carr-placeholder-sub">${esc(s.subtexto || '')}</span></div>`;
+  $('carr-counter').textContent = `${idx + 1} / ${slides.length}`;
+  document.querySelectorAll('.carr-thumb').forEach((t, i) => t.classList.toggle('active', i === idx));
+}
+
+function baixarTodosSlides() {
+  const slides = window._carrSlides || [];
+  slides.forEach((s, i) => {
+    if (s.imageUrl) {
+      const a = document.createElement('a');
+      a.href = s.imageUrl; a.download = `slide-${i+1}.png`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    }
+  });
+  toast('Baixando slides...');
+}
+
 // ========== CAMPANHA COMPLETA ==========
 async function gerarCampanha() {
   const tema = $('camp-tema').value.trim();

@@ -965,6 +965,74 @@ textarea { resize: vertical; }
   .perfil-hero { flex-direction: column; }
 }
 
+/* ========== CARROSSEL COMPLETO ========== */
+.carr-container { display: flex; flex-direction: column; gap: 16px; }
+.carr-header { text-align: center; }
+.carr-header h3 { font-size: 18px; margin-bottom: 10px; }
+.carr-header .paleta-preview { justify-content: center; }
+
+.carr-viewer {
+  display: flex; align-items: center; gap: 8px; justify-content: center;
+}
+.carr-nav {
+  background: #15151d; border: 1px solid #262632; color: #c084fc;
+  width: 40px; height: 40px; border-radius: 50%; font-size: 24px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all .2s; flex-shrink: 0;
+}
+.carr-nav:hover { background: #c084fc; color: #fff; }
+.carr-slide-display {
+  width: 100%; max-width: 420px; aspect-ratio: 4/5;
+  background: #0a0a12; border-radius: 14px; overflow: hidden;
+  border: 1px solid #262632; display: flex; align-items: center; justify-content: center;
+}
+.carr-img { width: 100%; height: 100%; object-fit: cover; }
+.carr-placeholder {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 32px; text-align: center; gap: 10px;
+  background: linear-gradient(135deg, rgba(192,132,252,.08), rgba(244,114,182,.05));
+  width: 100%; height: 100%;
+}
+.carr-placeholder-txt { font-size: 20px; font-weight: 800; color: #e2e8f0; line-height: 1.3; }
+.carr-placeholder-sub { font-size: 14px; color: #8a8aa0; }
+.carr-counter { text-align: center; font-size: 13px; color: #6b6b82; }
+
+.carr-thumbs {
+  display: flex; gap: 8px; overflow-x: auto; padding: 4px 0; justify-content: center;
+}
+.carr-thumb {
+  width: 64px; height: 80px; border-radius: 8px; overflow: hidden;
+  border: 2px solid transparent; cursor: pointer; flex-shrink: 0;
+  background: #15151d; transition: all .2s;
+}
+.carr-thumb.active { border-color: #c084fc; box-shadow: 0 0 0 2px rgba(192,132,252,.3); }
+.carr-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.carr-thumb-empty {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  color: #6b6b82; font-weight: 700; font-size: 18px;
+}
+
+.carr-slides-detail { display: flex; flex-direction: column; gap: 8px; }
+.carr-slide-info {
+  display: flex; gap: 14px; align-items: flex-start;
+  background: #0e0e18; border: 1px solid #1e1e30; border-radius: 10px; padding: 14px;
+}
+.carr-slide-num {
+  background: linear-gradient(135deg, #c084fc, #f472b6);
+  color: #fff; width: 28px; height: 28px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 800; flex-shrink: 0;
+}
+.carr-slide-content { flex: 1; }
+.carr-slide-content h5 { font-size: 14px; margin: 4px 0; }
+.carr-slide-content p { font-size: 12px; color: #8a8aa0; }
+
+.carr-legenda {
+  background: #0e0e18; border: 1px solid #1e1e30; border-radius: 12px; padding: 18px;
+}
+.carr-legenda h4 { font-size: 14px; color: #c084fc; margin-bottom: 8px; }
+.carr-legenda p { font-size: 13px; color: #b4b4c6; line-height: 1.7; margin-bottom: 10px; white-space: pre-wrap; }
+
 /* ========== NOVOS MÓDULOS: CAMPANHA, ADS, EMAIL, ETC ========== */
 
 /* Campanha */

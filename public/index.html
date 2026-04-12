@@ -310,6 +310,31 @@
 
     </div>
 
+      <!-- MÓDULO: Carrossel Completo -->
+      <div class="module-section">
+        <div class="module-header" onclick="this.parentElement.classList.toggle('open')">
+          <h3>🎠 Carrossel Completo</h3>
+          <p>Gere carrosséis prontos com texto e imagem para cada slide</p>
+        </div>
+        <div class="module-body">
+          <label>Tema do carrossel *<input id="carr-tema" placeholder="Ex: 5 dicas para economizar água em casa"></label>
+          <div class="row">
+            <label>Slides
+              <select id="carr-slides"><option>5</option><option>7</option><option>10</option></select>
+            </label>
+            <label>Estilo visual
+              <select id="carr-estilo">
+                <option>Moderno e limpo</option><option>Colorido e divertido</option>
+                <option>Elegante e minimalista</option><option>Corporativo</option>
+                <option>Educativo (infográfico)</option><option>Bold e impactante</option>
+              </select>
+            </label>
+          </div>
+          <button class="btn-primary" onclick="gerarCarrossel()">🎠 Gerar carrossel completo</button>
+          <div id="carr-resultado"></div>
+        </div>
+      </div>
+
       <!-- MÓDULO: Campanha Completa -->
       <div class="module-section">
         <div class="module-header" onclick="this.parentElement.classList.toggle('open')">
